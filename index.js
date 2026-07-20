@@ -908,7 +908,7 @@ app.post('/SerchvendorbyCompanyname', (req, res) => {
 
 app.post('/SearchVendorbydate', (req, res) => {
     const Added_Date = req.body.Added_Date;
-    const searchquery = `select * from vendor where  DATE(Added_Date)= ?`;
+    const searchquery = `select * from vendor where DATE(Added_Date)= ?`;
     connection.query(searchquery, [Added_Date], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -1711,87 +1711,173 @@ app.post('/DeleteChallan/:Challan_id', (req, res) => {
     });
 });
 
-// app.post('/DeleteChallan/:Challan_id', (req, res) => {
-//     const token = req.headers['x-access-token'];
-//     const { Password } = req.body;
+app.post('/AllChallanbyChallan_code', (req, res) => {
+    const Challan_Code = req.body.Challan_Code;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Challan_Code = ?`;
+    connection.query(Sqlquery, [Challan_Code], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
-//     if (!token) {
-//         return res.status(401).send({
-//             success: false,
-//             message: 'Unauthorized'
-//         });
-//     }
+app.post('/AllChallanbyDate', (req, res) => {
+    const Added_Date = req.body.Added_Date;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.DATE(Added_Date)= ?`;
+    connection.query(Sqlquery, [Added_Date], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
-//     jwt.verify(token, secrect, (err, decoded) => {
+app.post('/ChallanbyWorkStatus', (req, res) => {
+    const Work_Status = req.body.Work_Status;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Work_Status= ?`;
+    connection.query(Sqlquery, [Work_Status], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
-//         if (err) {
-//             return res.status(401).send({
-//                 success: false,
-//                 message: 'Unauthorized'
-//             });
-//         }
+app.post('/ChallanbyChallanStatus', (req, res) => {
+    const Challan_Status = req.body.Challan_Status;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Challan_Status= ?`;
+    connection.query(Sqlquery, [Challan_Status], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
-//         if (decoded.Role !== "Admin") {
-//             return res.status(403).send({
-//                 success: false,
-//                 message: 'Only Admin can delete InletChallan.'
-//             });
-//         }
+app.post('/ChallanbyDeliveryStatus', (req, res) => {
+    const Delivery_Status = req.body.Delivery_Status;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Delivery_Status= ?`;
+    connection.query(Sqlquery, [Delivery_Status], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
-//         // Get logged-in admin details
-//         connection.query(
-//             "SELECT * FROM admin WHERE Admin_id = ?",
-//             [decoded.Admin_id],
-//             async (err, adminData) => {
+app.post('/ChallanbyCustomername', (req, res) => {
+    const Customer_Name = req.body.Customer_Name;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Customer_Name= ?`;
+    connection.query(Sqlquery, [Customer_Name], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
-//                 if (err) {
-//                     return res.status(500).send({
-//                         success: false,
-//                         message: err.sqlMessage
-//                     });
-//                 }
-
-//                 if (adminData.length === 0) {
-//                     return res.status(404).send({
-//                         success: false,
-//                         message: "Admin not found."
-//                     });
-//                 }
-
-//                 // Verify password
-//                 if (adminData[0].Password !== Password) {
-//                     return res.status(401).send({
-//                         success: false,
-//                         message: "Incorrect Admin Password"
-//                     });
-//                 }
-
-//                 // Delete customer
-//                 connection.query(
-//                     // "DELETE FROM inletchallan WHERE Challan_id = ?",
-//                     `DELETE challan 
-//     FROM inletchallan challan
-//     JOIN inletproducts iproduct 
-//     ON challan.Challan_id = iproduct.Challan_id
-//     WHERE challan.Challan_id=?`,
-//                     [req.params.Challan_id],
-//                     (err, result) => {
-
-//                         if (err) {
-//                             return res.status(500).send({
-//                                 success: false,
-//                                 message: err.sqlMessage
-//                             });
-//                         }
-
-//                         return res.send({
-//                             success: true,
-//                             message: "Challan Deleted Successfully"
-//                         });
-//                     });
-//             });
-//     });
-// });
+app.post('/ChallanbyCompanyName', (req, res) => {
+    const Company_Name = req.body.Company_Name;
+    const Sqlquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Company_Name= ?`;
+    connection.query(Sqlquery, [Company_Name], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Challan Data',
+                data: data
+            });
+        }
+    });
+});
 
 
 function box(doc, x, y, w, h) {
@@ -2029,8 +2115,142 @@ app.get('/PrintInletchallan/:Challan_id', (req, res) => {
         doc.end();
     });
 });
-
 // Inlet challan API ends
+
+// Outward Challan
+
+app.post("/Addvendorchallan", (req, res) => {
+    const {
+        Vendor_Name,
+        Vendor_CompanyName,
+        Vendor_CompanyAddress,
+        VendorGST_No,
+        Vendor_Phoneno,
+        Vendor_Email,
+
+        Mode_of_Transport,
+        Transporter_Name,
+        Vehicle_Number,
+        Remark,
+        Product_Status,
+        Delivery_Status,
+        Challan_Status,
+
+        Discount_Amount = 0,
+        items
+    } = req.body;
+
+    if (!items || !items.length) {
+        return res.status(400).json({ message: "Products Required" });
+    }
+
+    // const datePart = Challan_Code.split("_")[0];
+    const today = new Date();
+
+    const datePart =
+        today.getFullYear().toString() +
+        String(today.getMonth() + 1).padStart(2, "0") +
+        String(today.getDate()).padStart(2, "0");
+
+    const qNoSql = `
+SELECT VendorChallan_Code 
+FROM vendorchallan 
+WHERE VendorChallan_Code LIKE 'VC_${datePart}_%' 
+ORDER BY VendorChallan_id DESC
+LIMIT 1
+`;
+
+    connection.query(qNoSql, (err, result) => {
+        if (err) return res.status(500).send(err);
+
+        let NewCode = `VC_${datePart}_01`;
+
+        if (result.length) {
+            const last = parseInt(result[0].VendorChallan_Code.split("_")[2]);
+            const next = String(last + 1).padStart(2, "0");
+            NewCode = `VC_${datePart}_${next}`;
+        }
+        console.log("New Challan :", NewCode);
+
+        let SubTotal = 0;
+        items.forEach(i => {
+            SubTotal += i.Rate * i.Product_Quantity;
+        });
+        const Total_Amount = SubTotal - Discount_Amount;
+        const CGST_amount = Total_Amount * 0.09;
+        const SGST_amount = Total_Amount * 0.09;
+        const Grand_Total =
+            Total_Amount + CGST_amount + SGST_amount;
+
+        const InletSql = `
+      INSERT INTO vendorchallan
+      (VendorChallan_Code, Vendor_Name, Vendor_CompanyName, Vendor_CompanyAddress,VendorGST_No, Vendor_Phoneno, Vendor_Email,
+        Sub_Total, Total_Amount, CGST_amount, SGST_amount, Grand_Total,
+       Mode_of_Transport,Transporter_Name,  Vehicle_Number, Remark, Product_Status, Delivery_Status, Challan_Status, Added_Date,Updated_Date)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())
+    `;
+
+        const inletValues = [
+            NewCode,
+            Vendor_Name,
+            Vendor_CompanyName,
+            Vendor_CompanyAddress,
+            VendorGST_No,
+            Vendor_Phoneno,
+            Vendor_Email,
+
+            SubTotal,
+            Total_Amount,
+            CGST_amount,
+            SGST_amount,
+            Grand_Total,
+            Mode_of_Transport,
+            Transporter_Name,
+            Vehicle_Number,
+            Remark,
+            Product_Status,
+            Delivery_Status,
+            Challan_Status,
+        ];
+
+        connection.query(InletSql, inletValues, (err, qResult) => {
+            if (err) return res.status(500).send(err);
+
+            const VendorChallan_id = qResult.insertId;
+
+            const itemSql = `
+        INSERT INTO vendorproducts
+        (VendorChallan_id, Product_Name, HSN_Code,
+         Product_Quantity, Operation_Perform,Rate, SubTotal)
+        VALUES ?
+      `;
+
+            const itemValues = items.map(i => [
+
+                VendorChallan_id,
+
+                i.Product_Name,
+                i.HSN_Code,
+                i.Product_Quantity,
+                i.Operation_Perform,
+                i.Rate,
+                i.Rate * i.Product_Quantity
+
+            ]);
+
+            connection.query(itemSql, [itemValues], err => {
+                if (err) return res.status(500).send(err);
+
+                res.json({
+                    success: true,
+                    message: "Outward Challan with multiple products Added",
+                    Challan_Code: NewCode
+                });
+            });
+        });
+    });
+});
+
 
 app.listen(3000, () => {
     console.log('Server is Running On Port 3000');
