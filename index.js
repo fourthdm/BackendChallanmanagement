@@ -1419,8 +1419,8 @@ app.get('/AllChallan', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id`;
-    
-     connection.query(newquery, (err, rows) => {
+
+    connection.query(newquery, (err, rows) => {
         if (err) {
             return res.status(500).json({ success: false, message: err.sqlMessage });
         }
@@ -1593,6 +1593,206 @@ app.get('/ChallanbyChallanid/:Challan_id', (req, res) => {
 
     });
 });
+
+app.post('/DeleteChallan/:Challan_id', (req, res) => {
+
+    const token = req.headers['x-access-token'];
+    const { Password } = req.body;
+
+    if (!token) {
+        return res.status(401).send({
+            success: false,
+            message: "Unauthorized"
+        });
+    }
+
+    jwt.verify(token, secrect, (err, decoded) => {
+
+        if (err) {
+            return res.status(401).send({
+                success: false,
+                message: "Unauthorized"
+            });
+        }
+
+        if (decoded.Role !== "Admin") {
+            return res.status(403).send({
+                success: false,
+                message: "Only Admin can delete Challan"
+            });
+        }
+
+        connection.query(
+            "SELECT * FROM admin WHERE Admin_id=?",
+            [decoded.Admin_id],
+            (err, adminData) => {
+
+                if (err) {
+                    return res.status(500).send({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+                }
+
+                if (adminData.length == 0) {
+                    return res.status(404).send({
+                        success: false,
+                        message: "Admin not found"
+                    });
+                }
+
+                if (adminData[0].Password !== Password) {
+                    return res.status(401).send({
+                        success: false,
+                        message: "Incorrect Admin Password"
+                    });
+                }
+
+                const Challan_id = req.params.Challan_id;
+
+                connection.beginTransaction(err => {
+
+                    if (err) {
+                        return res.status(500).send(err);
+                    }
+
+                    // Delete Products
+                    connection.query(
+                        "DELETE FROM inletproducts WHERE Challan_id=?",
+                        [Challan_id],
+                        (err) => {
+
+                            if (err) {
+                                return connection.rollback(() => {
+                                    res.status(500).send({
+                                        success: false,
+                                        message: err.sqlMessage
+                                    });
+                                });
+                            }
+
+                            // Delete Challan
+                            connection.query(
+                                "DELETE FROM inletchallan WHERE Challan_id=?",
+                                [Challan_id],
+                                (err) => {
+
+                                    if (err) {
+                                        return connection.rollback(() => {
+                                            res.status(500).send({
+                                                success: false,
+                                                message: err.sqlMessage
+                                            });
+                                        });
+                                    }
+
+                                    connection.commit(err => {
+
+                                        if (err) {
+                                            return connection.rollback(() => {
+                                                res.status(500).send({
+                                                    success: false,
+                                                    message: err.sqlMessage
+                                                });
+                                            });
+                                        }
+
+                                        res.send({
+                                            success: true,
+                                            message: "Challan Deleted Successfully"
+                                        });
+
+                                    });
+
+                                });
+                        });
+                });
+            });
+    });
+});
+
+// app.post('/DeleteChallan/:Challan_id', (req, res) => {
+//     const token = req.headers['x-access-token'];
+//     const { Password } = req.body;
+
+//     if (!token) {
+//         return res.status(401).send({
+//             success: false,
+//             message: 'Unauthorized'
+//         });
+//     }
+
+//     jwt.verify(token, secrect, (err, decoded) => {
+
+//         if (err) {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: 'Unauthorized'
+//             });
+//         }
+
+//         if (decoded.Role !== "Admin") {
+//             return res.status(403).send({
+//                 success: false,
+//                 message: 'Only Admin can delete InletChallan.'
+//             });
+//         }
+
+//         // Get logged-in admin details
+//         connection.query(
+//             "SELECT * FROM admin WHERE Admin_id = ?",
+//             [decoded.Admin_id],
+//             async (err, adminData) => {
+
+//                 if (err) {
+//                     return res.status(500).send({
+//                         success: false,
+//                         message: err.sqlMessage
+//                     });
+//                 }
+
+//                 if (adminData.length === 0) {
+//                     return res.status(404).send({
+//                         success: false,
+//                         message: "Admin not found."
+//                     });
+//                 }
+
+//                 // Verify password
+//                 if (adminData[0].Password !== Password) {
+//                     return res.status(401).send({
+//                         success: false,
+//                         message: "Incorrect Admin Password"
+//                     });
+//                 }
+
+//                 // Delete customer
+//                 connection.query(
+//                     // "DELETE FROM inletchallan WHERE Challan_id = ?",
+//                     `DELETE challan 
+//     FROM inletchallan challan
+//     JOIN inletproducts iproduct 
+//     ON challan.Challan_id = iproduct.Challan_id
+//     WHERE challan.Challan_id=?`,
+//                     [req.params.Challan_id],
+//                     (err, result) => {
+
+//                         if (err) {
+//                             return res.status(500).send({
+//                                 success: false,
+//                                 message: err.sqlMessage
+//                             });
+//                         }
+
+//                         return res.send({
+//                             success: true,
+//                             message: "Challan Deleted Successfully"
+//                         });
+//                     });
+//             });
+//     });
+// });
+
 
 function box(doc, x, y, w, h) {
     doc.rect(x, y, w, h).stroke();
