@@ -3112,6 +3112,50 @@ app.post('/VendorChallanbyCompanyName', (req, res) => {
 });
 
 
+app.get('/GetInletHistory/:Challan_id', (req, res) => {
+    const Challan_id = req.params.Challan_id;
+    connection.query(
+        `SELECT *
+FROM inletchallan_history
+WHERE Challan_id=?
+ORDER BY History_Id DESC`,
+
+    //     `SELECT inlethistory.*, iproducthistory.*
+    // FROM inletchallan_history inlethistory
+    // JOIN inletproducts_history iproducthistory 
+    // ON inlethistory.Challan_id = iproducthistory.Challan_id
+    // WHERE inlethistory.Challan_id= ?`
+
+        [Challan_id],
+        (err, result) => {
+            if (err)
+                return res.status(500).json(err);
+            res.json(result);
+        });
+});
+
+app.get('/GetVendorChallanHistory/:VendorChallan_id', (req, res) => {
+    const VendorChallan_id = req.params.VendorChallan_id;
+    connection.query(
+        `SELECT *
+FROM vendorchallan_history
+WHERE VendorChallan_id=?
+ORDER BY History_Id DESC`,
+
+    //     `SELECT inlethistory.*, iproducthistory.*
+    // FROM inletchallan_history inlethistory
+    // JOIN inletproducts_history iproducthistory 
+    // ON inlethistory.Challan_id = iproducthistory.Challan_id
+    // WHERE inlethistory.Challan_id= ?`
+
+        [VendorChallan_id],
+        (err, result) => {
+            if (err)
+                return res.status(500).json(err);
+            res.json(result);
+        });
+});
+
 
 app.listen(3000, () => {
     console.log('Server is Running On Port 3000');
