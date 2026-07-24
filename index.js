@@ -22,6 +22,7 @@ const bcrypt = require('bcrypt');
 
 const mysql = require('mysql');
 const { error } = require('console');
+const { ppid } = require('process');
 const connection = mysql.createConnection({
     host: 'localhost',
     user: 'root',
@@ -283,6 +284,47 @@ app.get('/NumberofAdmin', (req, res) => {
         }
     });
 });
+
+app.post('/AdminDatabydate', (req, res) => {
+    const Added_Date = req.body.Added_Date;
+    const sqll = `select * from admin where DATE(Added_Date) = ?`;
+    connection.query(sqll, [Added_Date], (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'All Admin Data',
+                data: data
+            });
+        }
+    });
+});
+
+app.post('/AdmindatabyStatus', (req, res) => {
+    const Status = req.body.Status;
+    const sqll = `select * from admin where Status = ?`;
+    connection.query(sqll, [Status], (err, data) => {
+        if(err){
+            res.status(500).send({
+                success:false,
+                message:err.sqlMessage,
+                data:[]
+            });
+        }else{
+            res.status(200).send({
+                success:true,
+                message:'Admin DAata by status.',
+                data:data
+            });
+        }
+    });
+});
+
 // Admin API End
 
 // All Customer API 
@@ -1484,6 +1526,78 @@ app.get('/AllChallan', (req, res) => {
 
 });
 
+app.get('/LimitedChallan', (req, res) => {
+    // const newquery = `select * from inletchallan`;
+    const newquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    LIMIT 3`;
+
+    connection.query(newquery, (err, rows) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: err.sqlMessage });
+        }
+        if (!rows.length) {
+            return res.json({ success: true, data: [] });
+        }
+        const result = {};
+        rows.forEach(row => {
+
+            if (!result[row.Challan_id]) {
+                result[row.Challan_id] = {
+                    Challan_id: row.Challan_id,
+                    Challan_Code: row.Challan_Code,
+                    Customer_Name: row.Customer_Name,
+                    Company_Name: row.Company_Name,
+                    Company_Address: row.Company_Address,
+                    Client_Address: row.Client_Address,
+                    GST_No: row.GST_No,
+                    Delivery_Address: row.Delivery_Address,
+                    Sub_Total: row.Sub_Total,
+                    Total_Amount: row.Total_Amount,
+                    Discount_Amount: row.Discount_Amount,
+                    CGST_amount: row.CGST_amount,
+                    SGST_amount: row.SGST_amount,
+                    Grand_Total: row.Grand_Total,
+                    Mode_of_Transport: row.Mode_of_Transport,
+                    Transporter_Name: row.Transporter_Name,
+                    Vehicle_Number: row.Vehicle_Number,
+                    Remark: row.Remark,
+                    Work_Status: row.Work_Status,
+                    Delivery_Status: row.Delivery_Status,
+                    Challan_Status: row.Challan_Status,
+                    Added_Date: row.Added_Date,
+                    Updated_Date: row.Updated_Date,
+                    items: []
+                };
+            }
+
+            result[row.Challan_id].items.push({
+                InletProduct_id: row.InletProduct_id,
+                Product_Name: row.Product_Name,
+                HSN_Code: row.HSN_Code,
+                Product_Quantity: row.Product_Quantity,
+                Rate: row.Rate,
+                SubTotal: row.SubTotal,
+            });
+
+        });
+
+        // ✅ SORT AFTER GROUPING
+        const finalData = Object.values(result).sort(
+            (a, b) => new Date(b.Added_Date) - new Date(a.Added_Date)
+        );
+
+        res.json({
+            success: true,
+            data: finalData
+        });
+
+    });
+
+});
+
 app.get('/TotalNumberofChallan', (req, res) => {
     const countquery = `select count(*) as Totalchallan from inletchallan`;
     connection.query(countquery, (err, data) => {
@@ -1740,7 +1854,7 @@ app.post('/AllChallanbyDate', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.DATE(Added_Date)= ?`;
+    WHERE DATE(challan.Added_Date)= ?`;
     connection.query(Sqlquery, [Added_Date], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2535,6 +2649,76 @@ app.get('/AllVendorChallan', (req, res) => {
     });
 });
 
+app.get('/LimitedVendorChallan', (req, res) => {
+    const newquery = `SELECT vchallan.*, vproduct.*
+    FROM vendorchallan vchallan
+    JOIN vendorproducts vproduct 
+    ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
+    LIMIT 3`;
+
+    connection.query(newquery, (err, rows) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: err.sqlMessage });
+        }
+        if (!rows.length) {
+            return res.json({ success: true, data: [] });
+        }
+        const result = {};
+        rows.forEach(row => {
+
+            if (!result[row.VendorChallan_id]) {
+                result[row.VendorChallan_id] = {
+                    VendorChallan_id: row.VendorChallan_id,
+                    VendorChallan_Code: row.VendorChallan_Code,
+                    Vendor_Name: row.Vendor_Name,
+                    Vendor_CompanyName: row.Vendor_CompanyName,
+                    Vendor_CompanyAddress: row.Vendor_CompanyAddress,
+                    VendorGST_No: row.VendorGST_No,
+                    Vendor_Phoneno: row.Vendor_Phoneno,
+                    Vendor_Email: row.Vendor_Email,
+                    Sub_Total: row.Sub_Total,
+                    Total_Amount: row.Total_Amount,
+                    CGST_amount: row.CGST_amount,
+                    SGST_amount: row.SGST_amount,
+                    Grand_Total: row.Grand_Total,
+                    Mode_of_Transport: row.Mode_of_Transport,
+                    Transporter_Name: row.Transporter_Name,
+                    Vehicle_Number: row.Vehicle_Number,
+                    Remark: row.Remark,
+                    Product_Status: row.Product_Status,
+                    Delivery_Status: row.Delivery_Status,
+                    Challan_Status: row.Challan_Status,
+                    Added_Date: row.Added_Date,
+                    Updated_Date: row.Updated_Date,
+                    vendoritems: []
+                };
+            }
+
+            result[row.VendorChallan_id].vendoritems.push({
+                VendorProduct_id: row.VendorProduct_id,
+                Product_Name: row.Product_Name,
+                HSN_Code: row.HSN_Code,
+                Operation_Perform: row.Operation_Perform,
+                Product_Quantity: row.Product_Quantity,
+                Rate: row.Rate,
+                SubTotal: row.SubTotal,
+            });
+
+        });
+
+        // ✅ SORT AFTER GROUPING
+        const finalData = Object.values(result).sort(
+            (a, b) => new Date(b.Added_Date) - new Date(a.Added_Date)
+        );
+
+        res.json({
+            success: true,
+            data: finalData
+        });
+
+    });
+});
+
 app.get('/VendorchallanbyChallanid/:VendorChallan_id', (req, res) => {
     const VendorChallan_id = req.params.VendorChallan_id;
     // const challanquery = `select * from inletchallan where Challan_id = ?`;
@@ -2942,7 +3126,6 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
     });
 });
 
-
 app.post('/VendorChallanbyChallan_code', (req, res) => {
     const VendorChallan_Code = req.body.VendorChallan_Code;
     const Sqlquery = `SELECT vchallan.*, vproduct.*
@@ -2973,7 +3156,7 @@ app.post('/VendorChallanbyDate', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.DATE(Added_Date)= ?`;
+    WHERE DATE(vchallan.Added_Date)= ?`;
     connection.query(Sqlquery, [Added_Date], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3120,11 +3303,11 @@ FROM inletchallan_history
 WHERE Challan_id=?
 ORDER BY History_Id DESC`,
 
-    //     `SELECT inlethistory.*, iproducthistory.*
-    // FROM inletchallan_history inlethistory
-    // JOIN inletproducts_history iproducthistory 
-    // ON inlethistory.Challan_id = iproducthistory.Challan_id
-    // WHERE inlethistory.Challan_id= ?`
+        //     `SELECT inlethistory.*, iproducthistory.*
+        // FROM inletchallan_history inlethistory
+        // JOIN inletproducts_history iproducthistory 
+        // ON inlethistory.Challan_id = iproducthistory.Challan_id
+        // WHERE inlethistory.Challan_id= ?`
 
         [Challan_id],
         (err, result) => {
@@ -3142,11 +3325,11 @@ FROM vendorchallan_history
 WHERE VendorChallan_id=?
 ORDER BY History_Id DESC`,
 
-    //     `SELECT inlethistory.*, iproducthistory.*
-    // FROM inletchallan_history inlethistory
-    // JOIN inletproducts_history iproducthistory 
-    // ON inlethistory.Challan_id = iproducthistory.Challan_id
-    // WHERE inlethistory.Challan_id= ?`
+        //     `SELECT inlethistory.*, iproducthistory.*
+        // FROM inletchallan_history inlethistory
+        // JOIN inletproducts_history iproducthistory 
+        // ON inlethistory.Challan_id = iproducthistory.Challan_id
+        // WHERE inlethistory.Challan_id= ?`
 
         [VendorChallan_id],
         (err, result) => {
