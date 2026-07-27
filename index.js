@@ -130,7 +130,7 @@ app.post('/AddAdmin', (req, res) => {
 });
 
 app.get('/AllAdminData', (req, res) => {
-    const alldata = `select * from admin`;
+    const alldata = `select * from admin order by Admin_id desc`;
     connection.query(alldata, (err, result) => {
         if (err) {
             res.status(500).send({
@@ -309,17 +309,17 @@ app.post('/AdmindatabyStatus', (req, res) => {
     const Status = req.body.Status;
     const sqll = `select * from admin where Status = ?`;
     connection.query(sqll, [Status], (err, data) => {
-        if(err){
+        if (err) {
             res.status(500).send({
-                success:false,
-                message:err.sqlMessage,
-                data:[]
+                success: false,
+                message: err.sqlMessage,
+                data: []
             });
-        }else{
+        } else {
             res.status(200).send({
-                success:true,
-                message:'Admin DAata by status.',
-                data:data
+                success: true,
+                message: 'Admin DAata by status.',
+                data: data
             });
         }
     });
@@ -371,7 +371,7 @@ app.post('/AddCustomer', (req, res) => {
 });
 
 app.get('/AllCustomerData', (req, res) => {
-    const Allcustomerquery = `select * from customer`;
+    const Allcustomerquery = `select * from customer order by Customer_id desc`;
     connection.query(Allcustomerquery, (err, data) => {
         if (err) {
             res.status(500).send({
@@ -712,7 +712,7 @@ app.post('/AddVendor', (req, res) => {
 });
 
 app.get('/Allvendorsdata', (req, res) => {
-    const Allvendorquery = `select * from vendor`;
+    const Allvendorquery = `select * from vendor order by Vendor_id desc`;
     connection.query(Allvendorquery, (err, data) => {
         if (err) {
             res.status(500).send({
@@ -1460,7 +1460,8 @@ app.get('/AllChallan', (req, res) => {
     const newquery = `SELECT challan.*, iproduct.*
     FROM inletchallan challan
     JOIN inletproducts iproduct 
-    ON challan.Challan_id = iproduct.Challan_id`;
+    ON challan.Challan_id = iproduct.Challan_id
+    ORDER BY challan.Challan_id DESC`;
 
     connection.query(newquery, (err, rows) => {
         if (err) {
@@ -1528,11 +1529,17 @@ app.get('/AllChallan', (req, res) => {
 
 app.get('/LimitedChallan', (req, res) => {
     // const newquery = `select * from inletchallan`;
-    const newquery = `SELECT challan.*, iproduct.*
-    FROM inletchallan challan
-    JOIN inletproducts iproduct 
-    ON challan.Challan_id = iproduct.Challan_id
-    LIMIT 3`;
+    const newquery = `SELECT DISTINCT challan.Challan_id, challan.*, iproduct.*
+FROM inletchallan challan
+JOIN inletproducts iproduct
+ON challan.Challan_id = iproduct.Challan_id
+ORDER BY challan.Challan_id DESC
+LIMIT 3;`;
+    // const newquery = `SELECT challan.*, iproduct.*
+    // FROM inletchallan challan
+    // JOIN inletproducts iproduct 
+    // ON challan.Challan_id = iproduct.Challan_id
+    // LIMIT challan.3`;
 
     connection.query(newquery, (err, rows) => {
         if (err) {
@@ -2288,7 +2295,7 @@ LIMIT 1
         vendoritems.forEach(i => {
             SubTotal += i.Rate * i.Product_Quantity;
         });
-        const Total_Amount = SubTotal - Discount_Amount;
+        const Total_Amount = SubTotal;
         const CGST_amount = Total_Amount * 0.09;
         const SGST_amount = Total_Amount * 0.09;
         const Grand_Total =
@@ -2584,7 +2591,8 @@ app.get('/AllVendorChallan', (req, res) => {
     const newquery = `SELECT vchallan.*, vproduct.*
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
-    ON vchallan.VendorChallan_id = vproduct.VendorChallan_id`;
+    ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
+    ORDER BY vchallan.VendorChallan_id DESC`;
 
     connection.query(newquery, (err, rows) => {
         if (err) {
@@ -2650,11 +2658,17 @@ app.get('/AllVendorChallan', (req, res) => {
 });
 
 app.get('/LimitedVendorChallan', (req, res) => {
-    const newquery = `SELECT vchallan.*, vproduct.*
-    FROM vendorchallan vchallan
-    JOIN vendorproducts vproduct 
-    ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    LIMIT 3`;
+    const newquery = `SELECT DISTINCT vchallan.VendorChallan_id, vchallan.*, vproduct.*
+FROM vendorchallan vchallan
+JOIN vendorproducts vproduct
+ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
+ORDER BY vchallan.VendorChallan_id DESC
+LIMIT 3;`;
+    // const newquery = `SELECT vchallan.*, vproduct.*
+    // FROM vendorchallan vchallan
+    // JOIN vendorproducts vproduct 
+    // ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
+    // LIMIT 3`;
 
     connection.query(newquery, (err, rows) => {
         if (err) {
