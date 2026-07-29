@@ -1279,7 +1279,6 @@ app.put('/UpdateaChallan/:Challan_id', (req, res) => {
             Challan_Status,
 
             Challan_id
-
         ];
 
         connection.query(UpdateSql, HeaderValues, (err) => {
@@ -1289,64 +1288,413 @@ app.put('/UpdateaChallan/:Challan_id', (req, res) => {
                     message: err.sqlMessage
                 });
             }
-            //-------------------------
-            // Delete Old Products
-            //-------------------------
             connection.query(
-                "DELETE FROM inletproducts WHERE Challan_id=?",
+                "SELECT InletProduct_id FROM inletproducts WHERE Challan_id=?",
                 [Challan_id],
-                (err) => {
+                (err, oldProducts) => {
+
                     if (err) {
                         return res.status(500).send({
                             success: false,
                             message: err.sqlMessage
                         });
                     }
-                    //-------------------------
-                    // Insert Products Again
-                    //-------------------------
-                    const InsertProductSql = `
-                    INSERT INTO inletproducts
-                    (
-                    Challan_id,
-                    Product_Name,
-                    HSN_Code,
-                    Product_Quantity,
-                    Rate,
-                    SubTotal
-                    )
-                    VALUES ?
-                    `;
 
-                    const ProductValues = items.map(i => [
-                        Challan_id,
-                        i.Product_Name,
-                        i.HSN_Code,
-                        i.Product_Quantity,
-                        i.Rate,
-                        Number(i.Product_Quantity) * Number(i.Rate)
-                    ]);
+                    let existingIds = [];
+                    let i = 0;
 
-                    connection.query(
+                    function saveProduct() {
 
-                        InsertProductSql,
-                        [ProductValues],
-                        (err) => {
-                            if (err) {
-                                return res.status(500).send({
-                                    success: false,
-                                    message: err.sqlMessage
+                        if (i >= items.length) {
+
+                            const deleteIds = oldProducts
+                                .map(x => x.InletProduct_id)
+                                .filter(id => !existingIds.includes(id));
+
+                            if (deleteIds.length == 0) {
+
+                                return res.send({
+                                    success: true,
+                                    message: "Challan Updated Successfully"
                                 });
+
                             }
-                            res.send({
-                                success: true,
-                                message: "Challan Updated Successfully"
-                            });
-                        });
-                });
+
+                            connection.query(
+                                "DELETE FROM inletproducts WHERE InletProduct_id IN (?)",
+                                [deleteIds],
+                                (err) => {
+
+                                    if (err) {
+
+                                        return res.status(500).send({
+                                            success: false,
+                                            message: err.sqlMessage
+                                        });
+
+                                    }
+
+                                    res.send({
+                                        success: true,
+                                        message: "Challan Updated Successfully"
+                                    });
+
+                                });
+
+                            return;
+
+                        }
+
+                        const p = items[i];
+
+                        const subtotal =
+                            Number(p.Product_Quantity) * Number(p.Rate);
+
+                        if (p.InletProduct_id && p.InletProduct_id > 0) {
+
+                            existingIds.push(p.InletProduct_id);
+
+                            connection.query(
+                                `UPDATE inletproducts
+                     SET
+                     Product_Name=?,
+                     HSN_Code=?,
+                     Product_Quantity=?,
+                     Rate=?,
+                     SubTotal=?
+                     WHERE InletProduct_id=?`,
+                                [
+                                    p.Product_Name,
+                                    p.HSN_Code,
+                                    p.Product_Quantity,
+                                    p.Rate,
+                                    subtotal,
+                                    p.InletProduct_id
+                                ],
+                                (err) => {
+
+                                    if (err) {
+                                        return res.status(500).send({
+                                            success: false,
+                                            message: err.sqlMessage
+                                        });
+                                    }
+
+                                    i++;
+                                    saveProduct();
+
+                                });
+
+                        }
+                        else {
+
+                            connection.query(
+                                `INSERT INTO inletproducts
+                    (
+                        Challan_id,
+                        Product_Name,
+                        HSN_Code,
+                        Product_Quantity,
+                        Rate,
+                        SubTotal
+                    )
+                    VALUES (?,?,?,?,?,?)`,
+                                [
+                                    Challan_id,
+                                    p.Product_Name,
+                                    p.HSN_Code,
+                                    p.Product_Quantity,
+                                    p.Rate,
+                                    subtotal
+                                ],
+                                (err) => {
+
+                                    if (err) {
+                                        return res.status(500).send({
+                                            success: false,
+                                            message: err.sqlMessage
+                                        });
+                                    }
+                                    i++;
+                                    saveProduct();
+
+                                });
+                        }
+                    }
+                    saveProduct();
+                }
+            );
+
         });
     });
 });
+
+// app.put('/UpdateaChallan/:Challan_id', (req, res) => {
+
+//     const token = req.headers['x-access-token'];
+
+//     if (!token) {
+//         return res.status(401).send({
+//             success: false,
+//             message: "Unauthorized"
+//         });
+//     }
+
+//     jwt.verify(token, secrect, (err, decoded) => {
+
+//         if (err) {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         if (decoded.Role !== "Admin") {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         const Challan_id = req.params.Challan_id;
+
+//         const {
+
+//             Customer_Name,
+//             Company_Name,
+//             Company_Address,
+//             GST_No,
+//             Delivery_Address,
+
+//             Mode_of_Transport,
+//             Transporter_Name,
+//             Vehicle_Number,
+//             Remark,
+//             Work_Status,
+//             Delivery_Status,
+//             Challan_Status,
+
+//             Discount_Amount = 0,
+
+//             items
+
+//         } = req.body;
+
+//         if (!items || items.length == 0) {
+
+//             return res.status(400).send({
+
+//                 success: false,
+
+//                 message: "Products Required"
+
+//             });
+
+//         }
+
+//         //-------------------------
+//         // Calculate Amount
+//         //-------------------------
+
+//         let SubTotal = 0;
+
+//         items.forEach(i => {
+//             SubTotal += Number(i.Product_Quantity) * Number(i.Rate);
+//         });
+//         const Total_Amount = SubTotal - Number(Discount_Amount);
+//         const CGST_amount = Total_Amount * 0.09;
+//         const SGST_amount = Total_Amount * 0.09;
+//         const Grand_Total =
+
+//             Total_Amount + CGST_amount + SGST_amount;
+
+//         //-------------------------
+//         // Update Header
+//         //-------------------------
+
+//         const UpdateSql = `
+//         UPDATE inletchallan
+//         SET
+
+//         Customer_Name=?,
+//         Company_Name=?,
+//         Company_Address=?,
+//         GST_No=?,
+//         Delivery_Address=?,
+
+//         Sub_Total=?,
+//         Total_Amount=?,
+//         Discount_Amount=?,
+//         CGST_amount=?,
+//         SGST_amount=?,
+//         Grand_Total=?,
+
+//         Mode_of_Transport=?,
+//         Transporter_Name=?,
+//         Vehicle_Number=?,
+//         Remark=?,
+
+//         Work_Status=?,
+//         Delivery_Status=?,
+//         Challan_Status=?,
+
+//         Updated_Date=NOW()
+
+//         WHERE Challan_id=?
+//         `;
+
+//         const HeaderValues = [
+
+//             Customer_Name,
+//             Company_Name,
+//             Company_Address,
+//             GST_No,
+//             Delivery_Address,
+
+//             SubTotal,
+//             Total_Amount,
+//             Discount_Amount,
+//             CGST_amount,
+//             SGST_amount,
+//             Grand_Total,
+
+//             Mode_of_Transport,
+//             Transporter_Name,
+//             Vehicle_Number,
+//             Remark,
+
+//             Work_Status,
+//             Delivery_Status,
+//             Challan_Status,
+
+//             Challan_id
+//         ];
+
+//         connection.query(UpdateSql, HeaderValues, (err) => {
+//             if (err) {
+//                 return res.status(500).send({
+//                     success: false,
+//                     message: err.sqlMessage
+//                 });
+//             }
+
+//             const HistorySql = `
+// INSERT INTO inletproducts_history
+// (
+//     Challan_id,
+//     InletProduct_id,
+//     old_product,
+//     Updated_Date
+// )
+// SELECT
+//     Challan_id,
+//     InletProduct_id,
+//     JSON_OBJECT(
+//         'Product_Name', Product_Name,
+//         'HSN_Code', HSN_Code,
+//         'Product_Quantity', Product_Quantity,
+//         'Rate', Rate,
+//         'SubTotal', SubTotal
+//     ),
+//     NOW()
+// FROM inletproducts
+// WHERE Challan_id = ?;
+// `;
+
+//             connection.query(HistorySql, [Challan_id], (err) => {
+//                 if (err) return res.status(500).send(err);
+
+//                 // Then DELETE
+
+//                 //-------------------------
+//                 // Delete Old Products
+//                 //-------------------------
+//                 connection.query(
+//                     "DELETE FROM inletproducts WHERE Challan_id=?",
+//                     [Challan_id],
+//                     (err) => {
+//                         if (err) {
+//                             return res.status(500).send({
+//                                 success: false,
+//                                 message: err.sqlMessage
+//                             });
+//                         }
+//                         //-------------------------
+//                         // Insert Products Again
+//                         //-------------------------
+//                         const InsertProductSql = `
+//                     INSERT INTO inletproducts
+//                     (
+//                     Challan_id,
+//                     Product_Name,
+//                     HSN_Code,
+//                     Product_Quantity,
+//                     Rate,
+//                     SubTotal
+//                     )
+//                     VALUES ?
+//                     `;
+
+//                         const ProductValues = items.map(i => [
+//                             Challan_id,
+//                             i.Product_Name,
+//                             i.HSN_Code,
+//                             i.Product_Quantity,
+//                             i.Rate,
+//                             Number(i.Product_Quantity) * Number(i.Rate)
+//                         ]);
+
+//                         connection.query(
+//                             InsertProductSql,
+//                             [ProductValues],
+//                             (err) => {
+//                                 if (err) {
+//                                     return res.status(500).send({
+//                                         success: false,
+//                                         message: err.sqlMessage
+//                                     });
+//                                 }
+//                                 const NewHistorySql = `
+//     INSERT INTO inletproducts_history
+//     (
+//         Challan_id,
+//         InletProduct_id,
+//         new_product,
+//         Updated_Date
+//     )
+//     SELECT
+//         Challan_id,
+//         InletProduct_id,
+//         JSON_OBJECT(
+//             'Product_Name', Product_Name,
+//             'HSN_Code', HSN_Code,
+//             'Product_Quantity', Product_Quantity,
+//             'Rate', Rate,
+//             'SubTotal', SubTotal
+//         ),
+//         NOW()
+//     FROM inletproducts
+//     WHERE Challan_id = ?`;
+
+//                                 connection.query(NewHistorySql, [Challan_id], (err) => {
+
+//                                     if (err) {
+//                                         return res.status(500).send(err);
+//                                     }
+
+//                                     res.send({
+//                                         success: true,
+//                                         message: "Challan Updated Successfully"
+//                                     });
+
+//                                 });
+//                             });
+//                     });
+//             });
+
+//         });
+//     });
+// });
 
 // app.put('/UpdateaChallan/:Challan_id', (req, res) => {
 //     const token = req.headers['x-access-token'];
@@ -3308,28 +3656,68 @@ app.post('/VendorChallanbyCompanyName', (req, res) => {
     });
 });
 
-
 app.get('/GetInletHistory/:Challan_id', (req, res) => {
+
     const Challan_id = req.params.Challan_id;
-    connection.query(
-        `SELECT *
-FROM inletchallan_history
-WHERE Challan_id=?
-ORDER BY History_Id DESC`,
 
-        //     `SELECT inlethistory.*, iproducthistory.*
-        // FROM inletchallan_history inlethistory
-        // JOIN inletproducts_history iproducthistory 
-        // ON inlethistory.Challan_id = iproducthistory.Challan_id
-        // WHERE inlethistory.Challan_id= ?`
+    const headerSql = `
+        SELECT *
+        FROM inletchallan_history
+        WHERE Challan_id=?
+        ORDER BY History_Id DESC
+    `;
 
-        [Challan_id],
-        (err, result) => {
-            if (err)
-                return res.status(500).json(err);
-            res.json(result);
+    const productSql = `
+        SELECT *
+        FROM inletproducts_history
+        WHERE Challan_id=?
+        ORDER BY History_Id DESC
+    `;
+
+    connection.query(headerSql, [Challan_id], (err, headers) => {
+
+        if (err) {
+            return res.status(500).send(err);
+        }
+
+        connection.query(productSql, [Challan_id], (err, products) => {
+
+            if (err) {
+                return res.status(500).send(err);
+            }
+
+            res.send({
+                success: true,
+                headerHistory: headers,
+                productHistory: products
+            });
+
         });
+
+    });
+
 });
+// app.get('/GetInletHistory/:Challan_id', (req, res) => {
+//     const Challan_id = req.params.Challan_id;
+//     connection.query(
+// //         `SELECT *
+// // FROM inletchallan_history
+// // WHERE Challan_id=?
+// // ORDER BY History_Id DESC`,
+
+//        `SELECT inlethistory.*, iproducthistory.*
+//         FROM inletchallan_history inlethistory
+//         JOIN inletproducts_history iproducthistory 
+//         ON inlethistory.Challan_id = iproducthistory.Challan_id
+//         WHERE inlethistory.Challan_id= ?`,
+
+//         [Challan_id],
+//         (err, result) => {
+//             if (err)
+//                 return res.status(500).json(err);
+//             res.json(result);
+//         });
+// });
 
 app.get('/GetVendorChallanHistory/:VendorChallan_id', (req, res) => {
     const VendorChallan_id = req.params.VendorChallan_id;
