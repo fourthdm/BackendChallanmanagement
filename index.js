@@ -1876,13 +1876,13 @@ app.get('/AllChallan', (req, res) => {
 });
 
 app.get('/LimitedChallan', (req, res) => {
-    // const newquery = `select * from inletchallan`;
-    const newquery = `SELECT DISTINCT challan.Challan_id, challan.*, iproduct.*
-FROM inletchallan challan
-JOIN inletproducts iproduct
-ON challan.Challan_id = iproduct.Challan_id
-ORDER BY challan.Challan_id DESC
-LIMIT 3;`;
+    const newquery = `SELECT * FROM inletchallan ORDER BY Challan_id DESC LIMIT 3;`;
+    //     const newquery = `SELECT challan.Challan_id, challan.*, iproduct.*
+    // FROM inletchallan challan
+    // JOIN inletproducts iproduct
+    // ON challan.Challan_id = iproduct.Challan_id
+    // ORDER BY challan.Challan_id DESC
+    // LIMIT 3;`;
     // const newquery = `SELECT challan.*, iproduct.*
     // FROM inletchallan challan
     // JOIN inletproducts iproduct 
@@ -2185,7 +2185,8 @@ app.post('/AllChallanbyChallan_code', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.Challan_Code = ?`;
+    WHERE challan.Challan_Code = ?
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Challan_Code], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2209,7 +2210,8 @@ app.post('/AllChallanbyDate', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE DATE(challan.Added_Date)= ?`;
+    WHERE DATE(challan.Added_Date)= ?
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Added_Date], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2233,7 +2235,8 @@ app.post('/ChallanbyWorkStatus', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.Work_Status= ?`;
+    WHERE challan.Work_Status= ?
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Work_Status], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2257,7 +2260,8 @@ app.post('/ChallanbyChallanStatus', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.Challan_Status= ?`;
+    WHERE challan.Challan_Status= ? 
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Challan_Status], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2281,7 +2285,8 @@ app.post('/ChallanbyDeliveryStatus', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.Delivery_Status= ?`;
+    WHERE challan.Delivery_Status= ?
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Delivery_Status], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2305,7 +2310,8 @@ app.post('/ChallanbyCustomername', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.Customer_Name= ?`;
+    WHERE challan.Customer_Name= ?
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Customer_Name], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2329,7 +2335,8 @@ app.post('/ChallanbyCompanyName', (req, res) => {
     FROM inletchallan challan
     JOIN inletproducts iproduct 
     ON challan.Challan_id = iproduct.Challan_id
-    WHERE challan.Company_Name= ?`;
+    WHERE challan.Company_Name= ?
+    GROUP BY challan.Challan_id;`;
     connection.query(Sqlquery, [Company_Name], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -2717,9 +2724,205 @@ LIMIT 1
     });
 });
 
+// app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
+
+//     const token = req.headers['x-access-token'];
+
+//     if (!token) {
+//         return res.status(401).send({
+//             success: false,
+//             message: "Unauthorized"
+//         });
+//     }
+
+//     jwt.verify(token, secrect, (err, decoded) => {
+
+//         if (err) {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         if (decoded.Role !== "Admin") {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         const VendorChallan_id = req.params.VendorChallan_id;
+
+//         const {
+//             Vendor_Name,
+//             Vendor_CompanyName,
+//             Vendor_CompanyAddress,
+//             VendorGST_No,
+//             Vendor_Phoneno,
+//             Vendor_Email,
+
+//             Mode_of_Transport,
+//             Transporter_Name,
+//             Vehicle_Number,
+//             Remark,
+//             Product_Status,
+//             Delivery_Status,
+//             Challan_Status,
+
+//             vendoritems
+//         } = req.body;
+
+//         if (!vendoritems || vendoritems.length == 0) {
+//             return res.status(400).send({
+//                 success: false,
+//                 message: "Products Required"
+//             });
+//         }
+
+//         //-------------------------
+//         // Calculate Amount
+//         //-------------------------
+
+//         let SubTotal = 0;
+//         vendoritems.forEach(i => {
+//             SubTotal += Number(i.Product_Quantity) * Number(i.Rate);
+//         });
+//         const Total_Amount = SubTotal;
+//         const CGST_amount = Total_Amount * 0.09;
+//         const SGST_amount = Total_Amount * 0.09;
+//         const Grand_Total =
+//             Total_Amount + CGST_amount + SGST_amount;
+
+//         //-------------------------
+//         // Update Header
+//         //-------------------------
+
+//         const UpdateSql = `
+//         UPDATE vendorchallan
+//         SET
+
+//         Vendor_Name=?,
+//         Vendor_CompanyName	=?,
+//         Vendor_CompanyAddress=?,
+//         VendorGST_No=?,
+//         Vendor_Phoneno=?,
+//         Vendor_Email=?,
+
+//         Sub_Total=?,
+//         Total_Amount=?,
+//         CGST_amount=?,
+//         SGST_amount=?,
+//         Grand_Total=?,
+
+//         Mode_of_Transport=?,
+//         Transporter_Name=?,
+//         Vehicle_Number=?,
+//         Remark=?,
+
+//         Product_Status=?,
+//         Delivery_Status=?,
+//         Challan_Status=?,
+
+//         Updated_Date=NOW()
+//         WHERE VendorChallan_id=?
+//         `;
+
+//         const HeaderValues = [
+
+//             Vendor_Name,
+//             Vendor_CompanyName,
+//             Vendor_CompanyAddress,
+//             VendorGST_No,
+//             Vendor_Phoneno,
+//             Vendor_Email,
+
+//             SubTotal,
+//             Total_Amount,
+//             CGST_amount,
+//             SGST_amount,
+//             Grand_Total,
+
+//             Mode_of_Transport,
+//             Transporter_Name,
+//             Vehicle_Number,
+//             Remark,
+
+//             Product_Status,
+//             Delivery_Status,
+//             Challan_Status,
+
+//             VendorChallan_id
+//         ];
+
+//         connection.query(UpdateSql, HeaderValues, (err) => {
+//             if (err) {
+//                 return res.status(500).send({
+//                     success: false,
+//                     message: err.sqlMessage
+//                 });
+//             }
+//             //-------------------------
+//             // Delete Old Products
+//             //-------------------------
+//             connection.query(
+//                 "DELETE FROM vendorproducts WHERE VendorChallan_id=?",
+//                 [VendorChallan_id],
+//                 (err) => {
+//                     if (err) {
+//                         return res.status(500).send({
+//                             success: false,
+//                             message: err.sqlMessage
+//                         });
+//                     }
+//                     //-------------------------
+//                     // Insert Products Again
+//                     //-------------------------
+//                     const InsertProductSql = `
+//                     INSERT INTO vendorproducts
+//                     (
+//                     VendorChallan_id,
+//                     Product_Name,
+//                     HSN_Code,
+//                     Operation_Perform,
+//                     Product_Quantity,
+//                     Rate,
+//                     SubTotal
+//                     )
+//                     VALUES ?
+//                     `;
+
+//                     const ProductValues = vendoritems.map(i => [
+//                         VendorChallan_id,
+//                         i.Product_Name,
+//                         i.HSN_Code,
+//                         i.Operation_Perform,
+//                         i.Product_Quantity,
+//                         i.Rate,
+//                         Number(i.Product_Quantity) * Number(i.Rate)
+//                     ]);
+
+//                     connection.query(
+
+//                         InsertProductSql,
+//                         [ProductValues],
+//                         (err) => {
+//                             if (err) {
+//                                 return res.status(500).send({
+//                                     success: false,
+//                                     message: err.sqlMessage
+//                                 });
+//                             }
+//                             res.send({
+//                                 success: true,
+//                                 message: "Vendor Challan Updated Successfully"
+//                             });
+//                         });
+//                 });
+//         });
+//     });
+// });
 
 app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
-
     const token = req.headers['x-access-token'];
 
     if (!token) {
@@ -2855,63 +3058,145 @@ app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
                     message: err.sqlMessage
                 });
             }
-            //-------------------------
-            // Delete Old Products
-            //-------------------------
             connection.query(
-                "DELETE FROM vendorproducts WHERE VendorChallan_id=?",
+                "SELECT VendorProduct_id FROM vendorproducts WHERE VendorChallan_id=?",
                 [VendorChallan_id],
-                (err) => {
+                (err, oldProducts) => {
+
                     if (err) {
                         return res.status(500).send({
                             success: false,
                             message: err.sqlMessage
                         });
                     }
-                    //-------------------------
-                    // Insert Products Again
-                    //-------------------------
-                    const InsertProductSql = `
-                    INSERT INTO vendorproducts
-                    (
-                    VendorChallan_id,
-                    Product_Name,
-                    HSN_Code,
-                    Operation_Perform,
-                    Product_Quantity,
-                    Rate,
-                    SubTotal
-                    )
-                    VALUES ?
-                    `;
 
-                    const ProductValues = vendoritems.map(i => [
-                        VendorChallan_id,
-                        i.Product_Name,
-                        i.HSN_Code,
-                        i.Operation_Perform,
-                        i.Product_Quantity,
-                        i.Rate,
-                        Number(i.Product_Quantity) * Number(i.Rate)
-                    ]);
+                    let existingIds = [];
+                    let i = 0;
 
-                    connection.query(
+                    function saveProduct() {
 
-                        InsertProductSql,
-                        [ProductValues],
-                        (err) => {
-                            if (err) {
-                                return res.status(500).send({
-                                    success: false,
-                                    message: err.sqlMessage
+                        if (i >= vendoritems.length) {
+
+                            const deleteIds = oldProducts
+                                .map(x => x.VendorProduct_id)
+                                .filter(id => !existingIds.includes(id));
+
+                            if (deleteIds.length == 0) {
+
+                                return res.send({
+                                    success: true,
+                                    message: "Challan Updated Successfully"
                                 });
                             }
-                            res.send({
-                                success: true,
-                                message: "Vendor Challan Updated Successfully"
-                            });
-                        });
-                });
+
+                            connection.query(
+                                "DELETE FROM vendorproducts WHERE VendorProduct_id IN (?)",
+                                [deleteIds],
+                                (err) => {
+
+                                    if (err) {
+
+                                        return res.status(500).send({
+                                            success: false,
+                                            message: err.sqlMessage
+                                        });
+                                    }
+
+                                    res.send({
+                                        success: true,
+                                        message: "Challan Updated Successfully"
+                                    });
+
+                                });
+
+                            return;
+
+                        }
+
+                        const p = vendoritems[i];
+
+                        const subtotal =
+                            Number(p.Product_Quantity) * Number(p.Rate);
+
+                        if (p.VendorProduct_id && p.VendorProduct_id > 0) {
+
+                            existingIds.push(p.VendorProduct_id);
+
+                            connection.query(
+                                `UPDATE vendorproducts
+                     SET
+                     Product_Name=?,
+                     HSN_Code=?,
+                     Operation_Perform=?,
+                     Product_Quantity=?,
+                     Rate=?,
+                     SubTotal=?
+                     WHERE VendorProduct_id=?`,
+                                [
+                                    p.Product_Name,
+                                    p.HSN_Code,
+                                    p.Operation_Perform,
+                                    p.Product_Quantity,
+                                    p.Rate,
+                                    subtotal,
+                                    p.VendorProduct_id
+                                ],
+                                (err) => {
+
+                                    if (err) {
+                                        return res.status(500).send({
+                                            success: false,
+                                            message: err.sqlMessage
+                                        });
+                                    }
+
+                                    i++;
+                                    saveProduct();
+
+                                });
+
+                        }
+                        else {
+
+                            connection.query(
+                                `INSERT INTO vendorproducts
+                    (
+                        VendorChallan_id,
+                        Product_Name,
+                        HSN_Code,
+                        Operation_Perform,
+                        Product_Quantity,
+                        Rate,
+                        SubTotal
+                    )
+                    VALUES (?,?,?,?,?,?,?)`,
+                                [
+                                    VendorChallan_id,
+                                    p.Product_Name,
+                                    p.HSN_Code,
+                                    p.Operation_Perform,
+                                    p.Product_Quantity,
+                                    p.Rate,
+                                    subtotal
+                                ],
+                                (err) => {
+
+                                    if (err) {
+                                        return res.status(500).send({
+                                            success: false,
+                                            message: err.sqlMessage
+                                        });
+                                    }
+                                    i++;
+                                    saveProduct();
+
+                                });
+                        }
+                    }
+                    saveProduct();
+                }
+            );
+
         });
     });
 });
@@ -3006,7 +3291,7 @@ app.get('/AllVendorChallan', (req, res) => {
 });
 
 app.get('/LimitedVendorChallan', (req, res) => {
-    const newquery = `SELECT DISTINCT vchallan.VendorChallan_id, vchallan.*, vproduct.*
+    const newquery = `SELECT vchallan.VendorChallan_id, vchallan.*, vproduct.*
 FROM vendorchallan vchallan
 JOIN vendorproducts vproduct
 ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
@@ -3494,7 +3779,8 @@ app.post('/VendorChallanbyChallan_code', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.VendorChallan_Code = ?`;
+    WHERE vchallan.VendorChallan_Code = ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [VendorChallan_Code], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3518,7 +3804,8 @@ app.post('/VendorChallanbyDate', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE DATE(vchallan.Added_Date)= ?`;
+    WHERE DATE(vchallan.Added_Date)= ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [Added_Date], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3542,7 +3829,8 @@ app.post('/VendorChallanbyProductStatus', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.Product_Status= ?`;
+    WHERE vchallan.Product_Status= ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [Product_Status], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3566,7 +3854,8 @@ app.post('/VEndorchallanbyChallanStatus', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.Challan_Status= ?`;
+    WHERE vchallan.Challan_Status= ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [Challan_Status], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3590,7 +3879,8 @@ app.post('/VendorChallanbyDeliveryStatus', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.Delivery_Status= ?`;
+    WHERE vchallan.Delivery_Status= ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [Delivery_Status], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3614,7 +3904,8 @@ app.post('/ChallanbyVendorname', (req, res) => {
     FROM vendorchallan vchallan
     JOIN vendorproducts vproduct 
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.Vendor_Name= ?`;
+    WHERE vchallan.Vendor_Name= ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [Vendor_Name], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3636,9 +3927,10 @@ app.post('/VendorChallanbyCompanyName', (req, res) => {
     const Vendor_CompanyName = req.body.Vendor_CompanyName;
     const Sqlquery = `SELECT vchallan.*, vproduct.*
     FROM vendorchallan vchallan
-    JOIN vendorproducts vproduct 
+    JOIN vendorproducts vproduct
     ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-    WHERE vchallan.Vendor_CompanyName= ?`;
+    WHERE vchallan.Vendor_CompanyName= ?
+    GROUP BY vchallan.VendorChallan_id;`;
     connection.query(Sqlquery, [Vendor_CompanyName], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -3657,9 +3949,7 @@ app.post('/VendorChallanbyCompanyName', (req, res) => {
 });
 
 app.get('/GetInletHistory/:Challan_id', (req, res) => {
-
     const Challan_id = req.params.Challan_id;
-
     const headerSql = `
         SELECT *
         FROM inletchallan_history
@@ -3697,6 +3987,7 @@ app.get('/GetInletHistory/:Challan_id', (req, res) => {
     });
 
 });
+
 // app.get('/GetInletHistory/:Challan_id', (req, res) => {
 //     const Challan_id = req.params.Challan_id;
 //     connection.query(
@@ -3721,24 +4012,58 @@ app.get('/GetInletHistory/:Challan_id', (req, res) => {
 
 app.get('/GetVendorChallanHistory/:VendorChallan_id', (req, res) => {
     const VendorChallan_id = req.params.VendorChallan_id;
-    connection.query(
-        `SELECT *
-FROM vendorchallan_history
-WHERE VendorChallan_id=?
-ORDER BY History_Id DESC`,
+    const headerSql = `
+        SELECT *
+        FROM vendorchallan_history
+        WHERE VendorChallan_id=?
+        ORDER BY History_Id DESC
+    `;
 
-        //     `SELECT inlethistory.*, iproducthistory.*
-        // FROM inletchallan_history inlethistory
-        // JOIN inletproducts_history iproducthistory 
-        // ON inlethistory.Challan_id = iproducthistory.Challan_id
-        // WHERE inlethistory.Challan_id= ?`
+    const productSql = `
+        SELECT *
+        FROM vendorproduct_history
+        WHERE VendorChallan_id=?
+        ORDER BY History_Id DESC
+    `;
 
-        [VendorChallan_id],
-        (err, result) => {
-            if (err)
-                return res.status(500).json(err);
-            res.json(result);
+    connection.query(headerSql, [VendorChallan_id], (err, headers) => {
+
+        if (err) {
+            return res.status(500).send(err);
+        }
+
+        connection.query(productSql, [VendorChallan_id], (err, products) => {
+
+            if (err) {
+                return res.status(500).send(err);
+            }
+
+            res.send({
+                success: true,
+                headerHistory: headers,
+                productHistory: products
+            });
         });
+    });
+
+    //     connection.query(
+    //         `SELECT *
+    // FROM vendorchallan_history
+    // WHERE VendorChallan_id=?
+    // ORDER BY History_Id DESC`,
+
+    //         //     `SELECT inlethistory.*, iproducthistory.*
+    //         // FROM inletchallan_history inlethistory
+    //         // JOIN inletproducts_history iproducthistory 
+    //         // ON inlethistory.Challan_id = iproducthistory.Challan_id
+    //         // WHERE inlethistory.Challan_id= ?`
+
+    //         [VendorChallan_id],
+    //         (err, result) => {
+    //             if (err)
+    //                 return res.status(500).json(err);
+    //             res.json(result);
+    //         });
 });
 
 
