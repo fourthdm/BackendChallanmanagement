@@ -2769,39 +2769,38 @@ app.post("/NEWAddvendorchallan", (req, res) => {
 
                                 const VendorProduct_id = productResult.insertId;
 
-                                if (
-                                    item.Operation_Perform &&
-                                    item.Operation_Perform.length > 0
-                                ) {
+                                if (item.operations && item.operations.length > 0) {
 
-                                    const operationValues = item.Operation_Perform.map(op => [
+                                    const operationValues = item.operations.map(op => [
 
                                         VendorProduct_id,
-                                        op
+
+                                        op.Operation_Name,
+
+                                        op.Rate
 
                                     ]);
 
                                     const operationSql = `
-                                    INSERT INTO vendorproduct_operations
-                                    (
-                                        VendorProduct_id,
-                                        Operation_Name
-                                    )
-                                    VALUES ?
-                                    `;
+        INSERT INTO vendorproduct_operations
+        (
+            VendorProduct_id,
+            Operation_Name,
+            Rate
+        )
+        VALUES ?
+    `;
 
-                                    connection.query(
-                                        operationSql,
-                                        [operationValues],
-                                        (err) => {
+                                    connection.query(operationSql, [operationValues], (err) => {
 
-                                            if (err)
-                                                return res.status(500).json(err);
-
-                                            insertProducts(index + 1);
-
+                                        if (err) {
+                                            console.log(err);
+                                            return res.status(500).json(err);
                                         }
-                                    );
+
+                                        insertProducts(index + 1);
+
+                                    });
 
                                 }
                                 else {
@@ -2809,20 +2808,42 @@ app.post("/NEWAddvendorchallan", (req, res) => {
                                     insertProducts(index + 1);
 
                                 }
+                                // if (
+                                //     item.Operation_Perform &&
+                                //     item.Operation_Perform.length > 0
+                                // ) {
 
-                            }
-                        );
+                                //     const operationValues = item.Operation_Perform.map(op => [
+                                //         VendorProduct_id,
+                                //         op
+                                //     ]);
 
+                                //     const operationSql = `
+                                //     INSERT INTO vendorproduct_operations
+                                //     (
+                                //         VendorProduct_id,
+                                //         Operation_Name,
+                                //         Rate
+                                //     )
+                                //     VALUES ?
+                                //     `;
+                                //     connection.query(
+                                //         operationSql,
+                                //         [operationValues],
+                                //         (err) => {
+                                //             if (err)
+                                //                 return res.status(500).json(err);
+                                //             insertProducts(index + 1);
+                                //         }
+                                //     );
+                                // }
+                                // else {
+                                //     insertProducts(index + 1);
+                                // }
+                            });
                     }
-
-                }
-
-            );
-
-        }
-
-    );
-
+                });
+        });
 });
 
 app.post("/Addvendorchallan", (req, res) => {
@@ -3358,7 +3379,6 @@ app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
                      SET
                      Product_Name=?,
                      HSN_Code=?,
-                     Operation_Perform=?,
                      Product_Quantity=?,
                      Rate=?,
                      SubTotal=?
@@ -3366,7 +3386,6 @@ app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
                                 [
                                     p.Product_Name,
                                     p.HSN_Code,
-                                    p.Operation_Perform,
                                     p.Product_Quantity,
                                     p.Rate,
                                     subtotal,
@@ -3386,6 +3405,65 @@ app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
 
                                 });
 
+
+                            function saveOperations() {
+
+                                let k = 0;
+
+                                function insertOperation() {
+
+                                    if (k >= p.operations.length) {
+
+                                        i++;
+
+                                        return saveProduct();
+
+                                    }
+
+                                    const op = p.operations[k];
+
+                                    connection.query(
+
+                                        `INSERT INTO vendorproduct_operations
+        (
+            VendorProduct_id,
+            Operation_Name,
+            Rate
+        )
+        VALUES(?,?,?)`,
+
+                                        [
+
+                                            p.VendorProduct_id,
+
+                                            op.Operation_Name,
+
+                                            op.Rate
+
+                                        ],
+
+                                        (err) => {
+
+                                            if (err) {
+
+                                                return res.status(500).send({
+                                                    success: false,
+                                                    message: err.sqlMessage
+                                                });
+
+                                            }
+
+                                            k++;
+
+                                            insertOperation();
+
+                                        });
+
+                                }
+
+                                insertOperation();
+
+                            }
                         }
                         else {
 
@@ -3395,17 +3473,15 @@ app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
                         VendorChallan_id,
                         Product_Name,
                         HSN_Code,
-                        Operation_Perform,
                         Product_Quantity,
                         Rate,
                         SubTotal
                     )
-                    VALUES (?,?,?,?,?,?,?)`,
+                    VALUES (?,?,?,?,?,?)`,
                                 [
                                     VendorChallan_id,
                                     p.Product_Name,
                                     p.HSN_Code,
-                                    p.Operation_Perform,
                                     p.Product_Quantity,
                                     p.Rate,
                                     subtotal
@@ -3453,17 +3529,29 @@ app.get('/TotalNumberofVendorChallan', (req, res) => {
 
 app.get('/AllVendorChallan', (req, res) => {
     // const newquery = `SELECT vc.*, vp.*, GROUP_CONCAT(vpo.Operation_Name ORDER BY vpo.Operation_Name SEPARATOR ', ') AS Operation_Perform FROM vendorchallan vc JOIN vendorproducts vp ON vc.VendorChallan_id = vp.VendorChallan_id LEFT JOIN vendorproduct_operations vpo ON vp.VendorProduct_id = vpo.VendorProduct_id GROUP BY vp.VendorProduct_id ORDER BY vc.VendorChallan_id DESC;`;
-    const newquery = `SELECT
-    vc.*,
-    vp.*,
-    GROUP_CONCAT(vpo.Operation_Name ORDER BY vpo.Operation_Name SEPARATOR ', ') AS Operation_Perform
-FROM vendorchallan vc
-JOIN vendorproducts vp
-    ON vc.VendorChallan_id = vp.VendorChallan_id
-LEFT JOIN vendorproduct_operations vpo
-    ON vp.VendorProduct_id = vpo.VendorProduct_id
-GROUP BY vp.VendorProduct_id
-ORDER BY vc.VendorChallan_id DESC;`;
+    //     const newquery = `SELECT
+    //     vc.*,
+    //     vp.*,
+    //     GROUP_CONCAT(vpo.Operation_Name ORDER BY vpo.Operation_Name SEPARATOR ', ') AS Operation_Perform
+    // FROM vendorchallan vc
+    // JOIN vendorproducts vp
+    //     ON vc.VendorChallan_id = vp.VendorChallan_id
+    // LEFT JOIN vendorproduct_operations vpo
+    //     ON vp.VendorProduct_id = vpo.VendorProduct_id
+    // GROUP BY vp.VendorProduct_id
+    // ORDER BY vc.VendorChallan_id DESC;`;
+
+    const newquery = `SELECT vc.*, vp.*, GROUP_CONCAT( CONCAT(vo.Operation_Name, ' (', vo.Rate, ')') ORDER BY vo.Operation_Name SEPARATOR ', ' ) AS Operation_Perform FROM vendorchallan vc JOIN vendorproducts vp ON vc.VendorChallan_id = vp.VendorChallan_id LEFT JOIN vendorproduct_operations vo ON vp.VendorProduct_id = vo.VendorProduct_id GROUP BY vp.VendorProduct_id ORDER BY vc.VendorChallan_id DESC;`
+
+    // `select vc.*, vp.*, vo.* 
+    // group_concat(vo.Operation_Name order by vo.Operation_Name separator ', ') as Operation_Perform
+    // from vendorchallan vc
+    // join vendorproducts vp
+    // on vc.VendorChallan_id = vp.VendorChallan_id
+    // left join vendorproduct_operations vo
+    // on  vp.VendorProduct_id = vo.VendorProduct_id
+    // group by vp.VendorProduct_id
+    // order by vc.VendorChallan_id desc;`
     connection.query(newquery, (err, rows) => {
 
         if (err) {
@@ -3541,7 +3629,7 @@ ORDER BY vc.VendorChallan_id DESC;`;
                     Operation_Perform: row.Operation_Perform || ""
                 };
 
-               challans[row.VendorChallan_id].vendoritems.push(product);
+                challans[row.VendorChallan_id].vendoritems.push(product);
             }
 
             if (row.Operation_Name) {
@@ -3630,12 +3718,14 @@ ORDER BY vc.VendorChallan_id DESC;`;
 // });
 
 app.get('/LimitedVendorChallan', (req, res) => {
-    const newquery = `SELECT vchallan.VendorChallan_id, vchallan.*, vproduct.*
-FROM vendorchallan vchallan
-JOIN vendorproducts vproduct
-ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
-ORDER BY vchallan.VendorChallan_id DESC
-LIMIT 3;`;
+    const newquery = `SELECT * FROM vendorchallan ORDER BY VendorChallan_id DESC LIMIT 3;`;
+
+    //     const newquery = `SELECT vchallan.VendorChallan_id, vchallan.*, vproduct.*
+    // FROM vendorchallan vchallan
+    // JOIN vendorproducts vproduct
+    // ON vchallan.VendorChallan_id = vproduct.VendorChallan_id
+    // ORDER BY vchallan.VendorChallan_id DESC
+    // LIMIT 3;`;
     // const newquery = `SELECT vchallan.*, vproduct.*
     // FROM vendorchallan vchallan
     // JOIN vendorproducts vproduct 
@@ -3708,18 +3798,27 @@ LIMIT 3;`;
 app.get('/VendorchallanbyChallanid/:VendorChallan_id', (req, res) => {
     const VendorChallan_id = req.params.VendorChallan_id;
     // const challanquery = `select * from inletchallan where Challan_id = ?`;
-    const challanquery = `SELECT
-    vc.*,
-    vp.*,
-    GROUP_CONCAT(vpo.Operation_Name ORDER BY vpo.Operation_Name SEPARATOR ', ') AS Operation_Perform
-FROM vendorchallan vc
-JOIN vendorproducts vp
-    ON vc.VendorChallan_id = vp.VendorChallan_id
-LEFT JOIN vendorproduct_operations vpo
-    ON vp.VendorProduct_id = vpo.VendorProduct_id
-WHERE vc.VendorChallan_id = ?
-GROUP BY vp.VendorProduct_id
-ORDER BY vp.VendorProduct_id`;
+    const challanquery = `SELECT vc.*, vp.*,
+    GROUP_CONCAT( CONCAT(vo.Operation_Name, ' (', vo.Rate, ')') ORDER BY vo.Operation_Name SEPARATOR ', ' ) AS Operation_Perform 
+    FROM vendorchallan vc 
+    JOIN vendorproducts vp ON vc.VendorChallan_id = vp.VendorChallan_id
+    LEFT JOIN vendorproduct_operations vo ON vp.VendorProduct_id = vo.VendorProduct_id 
+    WHERE vc.VendorChallan_id = ? 
+    GROUP BY vp.VendorProduct_id 
+    ORDER BY vc.VendorChallan_id DESC;`;
+
+    //     const challanquery = `SELECT
+    //     vc.*,
+    //     vp.*,
+    //     GROUP_CONCAT(vpo.Operation_Name ORDER BY vpo.Operation_Name SEPARATOR ', ') AS Operation_Perform
+    // FROM vendorchallan vc
+    // JOIN vendorproducts vp
+    //     ON vc.VendorChallan_id = vp.VendorChallan_id
+    // LEFT JOIN vendorproduct_operations vpo
+    //     ON vp.VendorProduct_id = vpo.VendorProduct_id
+    // WHERE vc.VendorChallan_id = ?
+    // GROUP BY vp.VendorProduct_id
+    // ORDER BY vp.VendorProduct_id`;
     // const challanquery = `SELECT vchallan.*, vproduct.*
     // FROM vendorchallan vchallan
     // JOIN vendorproducts vproduct 
@@ -3778,20 +3877,20 @@ ORDER BY vp.VendorProduct_id`;
             );
 
             if (!product) {
-product = {
+                product = {
 
-    VendorProduct_id: row.VendorProduct_id,
-    Product_Name: row.Product_Name,
-    HSN_Code: row.HSN_Code,
-    Product_Quantity: row.Product_Quantity,
-    Rate: row.Rate,
-    SubTotal: row.SubTotal,
+                    VendorProduct_id: row.VendorProduct_id,
+                    Product_Name: row.Product_Name,
+                    HSN_Code: row.HSN_Code,
+                    Product_Quantity: row.Product_Quantity,
+                    Rate: row.Rate,
+                    SubTotal: row.SubTotal,
 
-    // GROUP_CONCAT already returns a comma-separated string
-    Operation_Perform: row.Operation_Perform || ""
-};
+                    // GROUP_CONCAT already returns a comma-separated string
+                    Operation_Perform: row.Operation_Perform || ""
+                };
 
-challans[row.VendorChallan_id].vendoritems.push(product);
+                challans[row.VendorChallan_id].vendoritems.push(product);
 
             }
 
