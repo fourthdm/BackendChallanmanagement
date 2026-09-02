@@ -419,7 +419,7 @@ app.put('/UpdateCustomer/:Customer_id', (req, res) => {
     const Customer_Email = req.body.Customer_Email;
     const Customer_Status = req.body.Customer_Status;
 
-    const Sqlquery = `update customer set Customer_Name=?, Company_Name=?, Company_Address=?, Delivery_Address=?, GST_No=?, Customer_PhoneNo=?,  Customer_Email=?, Customer_Status=?  where Customer_id=?`;
+    const Sqlquery = `update customer set Customer_Name=?, Company_Name=?, Company_Address=?, Delivery_Address=?, GST_No=?, Customer_PhoneNo=?,  Customer_Email=?, Customer_Status=?,Updated_Date=NOW()  where Customer_id=?`;
     connection.query(Sqlquery, [Customer_Name, Company_Name, Company_Address, Delivery_Address, GST_No, Customer_PhoneNo, Customer_Email, Customer_Status, Customer_id], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -759,7 +759,7 @@ app.put('/UpdateVendor/:Vendor_id', (req, res) => {
     const Vendor_CompanyAddress = req.body.Vendor_CompanyAddress;
     const Vendor_Status = req.body.Vendor_Status;
 
-    const Sqlquery = `update vendor set Vendor_Name=?, Vendor_CompanyName=?, VendorGST_No=?, Vendor_Phoneno=?,Vendor_Email=?, Vendor_CompanyAddress=?, Vendor_Status=?  where Vendor_id=?`;
+    const Sqlquery = `update vendor set Vendor_Name=?, Vendor_CompanyName=?, VendorGST_No=?, Vendor_Phoneno=?,Vendor_Email=?, Vendor_CompanyAddress=?, Updated_Date=NOW(), Vendor_Status=?  where Vendor_id=?`;
     connection.query(Sqlquery, [Vendor_Name, Vendor_CompanyName, VendorGST_No, Vendor_Phoneno, Vendor_Email, Vendor_CompanyAddress, Vendor_Status, Vendor_id], (err, data) => {
         if (err) {
             res.status(500).send({
@@ -4213,114 +4213,114 @@ app.put('/UpdateVendorChallan/:VendorChallan_id', (req, res) => {
                             );
                         }
                     }
-function saveOperations(VendorProduct_id, operations) {
-    connection.query(
-        'SELECT Operation_id FROM vendorproduct_operations WHERE VendorProduct_id = ?',
-        [VendorProduct_id],
-        (err, oldOperations) => {
-            if (err) return rollback(res, err);
+                    function saveOperations(VendorProduct_id, operations) {
+                        connection.query(
+                            'SELECT Operation_id FROM vendorproduct_operations WHERE VendorProduct_id = ?',
+                            [VendorProduct_id],
+                            (err, oldOperations) => {
+                                if (err) return rollback(res, err);
 
-            const savedOperationIds = [];
-            let opIndex = 0;
+                                const savedOperationIds = [];
+                                let opIndex = 0;
 
-            function saveNextOperation() {
-                if (opIndex >= operations.length) {
-                    const oldIds = oldOperations.map(o => o.Operation_id);
-                    const deleteIds = oldIds.filter(id => !savedOperationIds.includes(id));
+                                function saveNextOperation() {
+                                    if (opIndex >= operations.length) {
+                                        const oldIds = oldOperations.map(o => o.Operation_id);
+                                        const deleteIds = oldIds.filter(id => !savedOperationIds.includes(id));
 
-                    if (deleteIds.length === 0) {
-                        index++;
-                        return saveNextProduct();
-                    }
+                                        if (deleteIds.length === 0) {
+                                            index++;
+                                            return saveNextProduct();
+                                        }
 
-                    connection.query(
-                        'DELETE FROM vendorproduct_operations WHERE Operation_id IN (?)',
-                        [deleteIds],
-                        err => {
-                            if (err) return rollback(res, err);
-                            index++;
-                            saveNextProduct();
-                        }
-                    );
+                                        connection.query(
+                                            'DELETE FROM vendorproduct_operations WHERE Operation_id IN (?)',
+                                            [deleteIds],
+                                            err => {
+                                                if (err) return rollback(res, err);
+                                                index++;
+                                                saveNextProduct();
+                                            }
+                                        );
 
-                    return;
-                }
+                                        return;
+                                    }
 
-                const op = operations[opIndex];
+                                    const op = operations[opIndex];
 
-                if (op.Operation_id && op.Operation_id != 0) {
-                    savedOperationIds.push(op.Operation_id);
+                                    if (op.Operation_id && op.Operation_id != 0) {
+                                        savedOperationIds.push(op.Operation_id);
 
-                    connection.query(
-                        `
+                                        connection.query(
+                                            `
                         UPDATE vendorproduct_operations
                         SET Operation_Name = ?, Rate = ?
                         WHERE Operation_id = ?
                         `,
-                        [op.Operation_Name, op.Rate, op.Operation_id],
-                        err => {
-                            if (err) return rollback(res, err);
-                            opIndex++;
-                            saveNextOperation();
-                        }
-                    );
-                } else {
-                    connection.query(
-                        `
+                                            [op.Operation_Name, op.Rate, op.Operation_id],
+                                            err => {
+                                                if (err) return rollback(res, err);
+                                                opIndex++;
+                                                saveNextOperation();
+                                            }
+                                        );
+                                    } else {
+                                        connection.query(
+                                            `
                         INSERT INTO vendorproduct_operations
                         (VendorProduct_id, Operation_Name, Rate)
                         VALUES (?, ?, ?)
                         `,
-                        [VendorProduct_id, op.Operation_Name, op.Rate],
-                        (err, result) => {
-                            if (err) return rollback(res, err);
-                            savedOperationIds.push(result.insertId);
-                            opIndex++;
-                            saveNextOperation();
-                        }
-                    );
-                }
-            }
+                                            [VendorProduct_id, op.Operation_Name, op.Rate],
+                                            (err, result) => {
+                                                if (err) return rollback(res, err);
+                                                savedOperationIds.push(result.insertId);
+                                                opIndex++;
+                                                saveNextOperation();
+                                            }
+                                        );
+                                    }
+                                }
 
-            saveNextOperation();
-        }
-    );
-}
-                //     function saveOperations(VendorProduct_id, operations) {
-                //         connection.query(
-                //             'DELETE FROM vendorproduct_operations WHERE VendorProduct_id = ?',
-                //             [VendorProduct_id],
-                //             err => {
-                //                 if (err) return rollback(res, err);
+                                saveNextOperation();
+                            }
+                        );
+                    }
+                    //     function saveOperations(VendorProduct_id, operations) {
+                    //         connection.query(
+                    //             'DELETE FROM vendorproduct_operations WHERE VendorProduct_id = ?',
+                    //             [VendorProduct_id],
+                    //             err => {
+                    //                 if (err) return rollback(res, err);
 
-                //                 if (!operations.length) {
-                //                     index++;
-                //                     return saveNextProduct();
-                //                 }
+                    //                 if (!operations.length) {
+                    //                     index++;
+                    //                     return saveNextProduct();
+                    //                 }
 
-                //                 const values = operations.map(op => [
-                //                     VendorProduct_id,
-                //                     op.Operation_Name,
-                //                     op.Rate
-                //                 ]);
+                    //                 const values = operations.map(op => [
+                    //                     VendorProduct_id,
+                    //                     op.Operation_Name,
+                    //                     op.Rate
+                    //                 ]);
 
-                //                 connection.query(
-                //                     `
-                //     INSERT INTO vendorproduct_operations
-                //     (VendorProduct_id, Operation_Name, Rate)
-                //     VALUES ?
-                //   `,
-                //                     [values],
-                //                     err => {
-                //                         if (err) return rollback(res, err);
+                    //                 connection.query(
+                    //                     `
+                    //     INSERT INTO vendorproduct_operations
+                    //     (VendorProduct_id, Operation_Name, Rate)
+                    //     VALUES ?
+                    //   `,
+                    //                     [values],
+                    //                     err => {
+                    //                         if (err) return rollback(res, err);
 
-                //                         index++;
-                //                         saveNextProduct();
-                //                     }
-                //                 );
-                //             }
-                //         );
-                //     }
+                    //                         index++;
+                    //                         saveNextProduct();
+                    //                     }
+                    //                 );
+                    //             }
+                    //         );
+                    //     }
 
                     saveNextProduct();
                 }
@@ -4780,6 +4780,264 @@ app.get('/VendorchallanbyChallanid/:VendorChallan_id', (req, res) => {
 //     });
 // });
 
+app.post('/DeletevendorchallanbyDelationReason/:VendorChallan_id', (req, res) => {
+    const token = req.headers['x-access-token'];
+    const { Password, Deletion_Reason } = req.body;
+    const VendorChallan_id = req.params.VendorChallan_id;
+    // -----------------------------------
+    // 1. Validate Token
+    // -----------------------------------
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    // -----------------------------------
+    // 2. Validate Deletion Reason
+    // -----------------------------------
+    if (!Deletion_Reason || Deletion_Reason.trim() === '') {
+        return res.status(400).json({
+            success: false,
+            message: 'Deletion reason is required'
+        });
+    }
+    if (Deletion_Reason.trim().length < 5) {
+        return res.status(400).json({
+            success: false,
+            message: 'Please enter a valid deletion reason'
+        });
+    }
+    // -----------------------------------
+    // 3. Verify JWT
+    // ----------------------------------
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        // -----------------------------------
+        // 4. Check Admin Role
+        // -----------------------------------
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can delete Vendor Challan'
+            });
+        }
+        // -----------------------------------
+        // 5. Get Admin
+        // -----------------------------------
+        connection.query(
+            'SELECT * FROM admin WHERE Admin_id = ?',
+            [decoded.Admin_id],
+            (err, adminData) => {
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+                }
+                if (!adminData.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Admin not found'
+                    });
+                }
+                // -----------------------------------
+                // 6. Check Password
+                // -----------------------------------
+                if (adminData[0].Password !== Password) {
+                    return res.status(401).json({
+                        success: false,
+                        message: 'Incorrect Admin Password'
+                    });
+                }
+                const adminName =
+                    adminData[0].Name ||
+                    adminData[0].Admin_Name ||
+                    adminData[0].Username ||
+                    'Admin';
+                // -----------------------------------
+                // 7. Start Transaction
+                // -----------------------------------
+                connection.beginTransaction((err) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+                    }
+                    // -----------------------------------
+                    // 8. Get Challan Data
+                    // -----------------------------------
+                    connection.query(
+                        `
+                        SELECT *
+                        FROM vendorchallan
+                        WHERE VendorChallan_id = ?
+                        `,
+                        [VendorChallan_id],
+                        (err, challanData) => {
+                            if (err) {
+                                return rollbackDelete(
+                                    res,
+                                    err
+                                );
+                            }
+
+                            if (!challanData.length) {
+                                return rollbackDelete(
+                                    res,
+                                    {
+                                        sqlMessage: 'Vendor Challan not found'
+                                    }
+                                );
+                            }
+                            // -----------------------------------
+                            // 9. Get Product Data
+                            // -----------------------------------
+                            connection.query(
+                                `SELECT * FROM vendorproducts WHERE VendorChallan_id = ?`,
+                                [VendorChallan_id],
+                                (err, productData) => {
+                                    if (err) {
+                                        return rollbackDelete(
+                                            res,
+                                            err
+                                        );
+                                    }
+                                    // -----------------------------------
+                                    // 10. Insert Deletion History
+                                    // -----------------------------------
+
+                                    const VendorChallan_Code =
+                                        challanData[0].VendorChallan_Code ||
+                                        challanData[0].VendorChallan_Code ||
+                                        null;
+
+
+                                    connection.query(
+                                        `
+                                        INSERT INTO vendorchallan_deletion_history
+                                        (
+                                            VendorChallan_id,
+                                            VendorChallan_Code,
+                                            Deleted_By_Admin_id,
+                                            Deleted_By_Admin_Name,
+                                            Deletion_Reason,
+                                            Deleted_Date,
+                                            Challan_Data,
+                                            Product_Data
+                                        )
+                                        VALUES (?, ?, ?, ?, ?, NOW(), ?, ?)
+                                        `,
+                                        [
+                                            VendorChallan_id,
+                                            VendorChallan_Code,
+                                            decoded.Admin_id,
+                                            adminName,
+                                            Deletion_Reason.trim(),
+                                            JSON.stringify(challanData[0]),
+                                            JSON.stringify(productData)
+                                        ],
+
+                                        (err) => {
+                                            if (err) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    err
+                                                );
+                                            }
+                                            // -----------------------------------
+                                            // 11. Delete Operations
+                                            // -----------------------------------
+
+                                            connection.query(
+                                                `
+                                                DELETE vo
+                                                FROM vendorproduct_operations vo
+                                                INNER JOIN vendorproducts vp
+                                                    ON vo.VendorProduct_id =
+                                                       vp.VendorProduct_id
+                                                WHERE vp.VendorChallan_id = ?
+                                                `,
+                                                [VendorChallan_id],
+                                                (err) => {
+                                                    if (err) {
+                                                        return rollbackDelete(
+                                                            res,
+                                                            err
+                                                        );
+                                                    }
+                                                    // -----------------------------------
+                                                    // 12. Delete Products
+                                                    // -----------------------------------
+
+                                                    connection.query(
+                                                        `
+                                                        DELETE FROM vendorproducts
+                                                        WHERE VendorChallan_id = ?
+                                                        `,
+                                                        [VendorChallan_id],
+                                                        (err) => {
+                                                            if (err) {
+                                                                return rollbackDelete(
+                                                                    res,
+                                                                    err
+                                                                );
+                                                            }
+                                                            // -----------------------------------
+                                                            // 13. Delete Challan
+                                                            // -----------------------------------
+
+                                                            connection.query(
+                                                                `DELETE
+                                                                FROM vendorchallan
+                                                                WHERE VendorChallan_id = ?
+                                                                `,
+                                                                [VendorChallan_id],
+
+                                                                (err) => {
+
+                                                                    if (err) {
+                                                                        return rollbackDelete(
+                                                                            res,
+                                                                            err
+                                                                        );
+                                                                    }
+                                                                    // -----------------------------------
+                                                                    // 14. Commit Transaction
+                                                                    // -----------------------------------
+                                                                    connection.commit(
+                                                                        (err) => {
+                                                                            if (err) {
+                                                                                return rollbackDelete(
+                                                                                    res,
+                                                                                    err
+                                                                                );
+                                                                            }
+                                                                            // -----------------------------------
+                                                                            // SUCCESS
+                                                                            // -----------------------------------
+                                                                            res.json({
+                                                                                success: true,
+                                                                                message:
+                                                                                    'Vendor Challan Deleted Successfully'
+                                                                            });
+                                                                        });
+                                                                });
+                                                        });
+                                                });
+                                        });
+                                });
+                        });
+                });
+            });
+    });
+});
 
 app.post('/DeleteVendorChallan/:VendorChallan_id', (req, res) => {
     const token = req.headers['x-access-token'];
@@ -4842,8 +5100,7 @@ app.post('/DeleteVendorChallan/:VendorChallan_id', (req, res) => {
                     }
 
                     connection.query(
-                        `
-              DELETE vo
+                        ` DELETE vo
               FROM vendorproduct_operations vo
               INNER JOIN vendorproducts vp
                 ON vo.VendorProduct_id = vp.VendorProduct_id
@@ -4982,9 +5239,9 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
             { t: 'Sr No', w: 40 },
             { t: 'Product Name', w: 105 },
             { t: 'HSN Code', w: 70 },
-            { t: 'Operations', w: 125 },
-            { t: 'Qty', w: 65 },
+            { t: 'Operation - Rate', w: 125 },
             { t: 'Rate', w: 65 },
+            { t: 'Qty', w: 65 },
             { t: 'Total', w: 85 }
         ];
 
@@ -5009,7 +5266,7 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
             const operationText = item.Operations || '-';
             const operationLines = operationText.split('\n').length;
             const rowHeight = Math.max(30, operationLines * 15);
-
+            
             if (y + rowHeight > maxY) {
                 doc.text(`Page Subtotal : Rs ${pageSubtotal}`, 400, y + 10);
 
@@ -5037,10 +5294,10 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
             cell(doc, operationText, x, y, 125, rowHeight);
             x += 125;
 
-            cell(doc, item.Product_Quantity, x, y, 65, rowHeight);
+            cell(doc, item.Product_Rate, x, y, 65, rowHeight);
             x += 65;
 
-            cell(doc, item.Product_Rate, x, y, 65, rowHeight);
+            cell(doc, item.Product_Quantity, x, y, 65, rowHeight);
             x += 65;
 
             cell(doc, item.SubTotal, x, y, 85, rowHeight);
@@ -5048,19 +5305,14 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
             pageSubtotal += Number(item.SubTotal || 0);
             y += rowHeight;
         });
-
         doc.text(`Page Subtotal : Rs ${pageSubtotal}`, 400, y + 10);
-
         y += 35;
-
         if (y + 280 > doc.page.height - 50) {
             doc.addPage();
             drawHeader();
             y = 215;
         }
-
         box(doc, 20, y, 555, 130);
-
         doc.fontSize(9);
         doc.text(`Sub Total : Rs ${q.Sub_Total}`, 400, y + 10);
         doc.text(`Total Amount : Rs ${q.Total_Amount}`, 400, y + 30);
@@ -5107,7 +5359,6 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
         doc.end();
     });
 });
-
 
 // app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
 //     const VendorChallan_id = req.params.VendorChallan_id;
@@ -5704,6 +5955,203 @@ app.get('/GetVendorChallanHistory/:VendorChallan_id', (req, res) => {
 //     //             res.json(result);
 //     //         });
 // });
+
+
+
+app.get('/GetVendorChallanDeletionHistory', (req, res) => {
+    const token = req.headers['x-access-token'];
+    if (!token) {
+
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+
+    }
+
+
+    jwt.verify(token, secrect, (err, decoded) => {
+
+        if (err) {
+
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+
+        }
+
+
+        if (decoded.Role !== 'Admin') {
+
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can view deletion history'
+            });
+
+        }
+
+
+        connection.query(
+            `
+            SELECT
+               *
+            FROM vendorchallan_deletion_history
+            ORDER BY Deleted_Date DESC
+            `,
+
+            (err, result) => {
+
+                if (err) {
+
+                    return res.status(500).json({
+
+                        success: false,
+
+                        message: err.sqlMessage
+
+                    });
+
+                }
+
+
+                return res.json({
+
+                    success: true,
+
+                    data: result
+
+                });
+
+            }
+        );
+
+    });
+
+});
+
+
+app.get('/GetVendorChallanDeletionHistory/:DeletionHistory_id', (req, res) => {
+
+        const token = req.headers['x-access-token'];
+
+        const DeletionHistory_id =
+            req.params.DeletionHistory_id;
+
+
+        if (!token) {
+
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+
+        }
+
+
+        jwt.verify(token, secrect, (err, decoded) => {
+
+            if (err) {
+
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized'
+                });
+
+            }
+
+
+            if (decoded.Role !== 'Admin') {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        'Only Admin can view deletion history'
+                });
+
+            }
+
+
+            connection.query(
+                `
+                SELECT *
+                FROM vendorchallan_deletion_history
+                WHERE DeletionHistory_id = ?
+                `,
+                [DeletionHistory_id],
+
+                (err, result) => {
+
+                    if (err) {
+
+                        return res.status(500).json({
+
+                            success: false,
+
+                            message: err.sqlMessage
+
+                        });
+
+                    }
+
+
+                    if (!result.length) {
+
+                        return res.status(404).json({
+
+                            success: false,
+
+                            message:
+                                'Deletion history not found'
+
+                        });
+
+                    }
+
+
+                    const history = result[0];
+
+
+                    // Convert JSON strings back to objects
+                    try {
+
+                        history.Challan_Data =
+                            JSON.parse(history.Challan_Data);
+
+                    } catch (e) {
+
+                        history.Challan_Data = null;
+
+                    }
+
+
+                    try {
+
+                        history.Product_Data =
+                            JSON.parse(history.Product_Data);
+
+                    } catch (e) {
+
+                        history.Product_Data = [];
+
+                    }
+
+
+                    return res.json({
+
+                        success: true,
+
+                        data: history
+
+                    });
+
+                }
+            );
+
+        });
+
+    }
+);
 
 
 app.listen(3000, () => {
