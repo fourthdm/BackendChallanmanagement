@@ -5266,7 +5266,7 @@ app.get('/PrintVendorchallan/:VendorChallan_id', (req, res) => {
             const operationText = item.Operations || '-';
             const operationLines = operationText.split('\n').length;
             const rowHeight = Math.max(30, operationLines * 15);
-            
+
             if (y + rowHeight > maxY) {
                 doc.text(`Page Subtotal : Rs ${pageSubtotal}`, 400, y + 10);
 
@@ -6031,15 +6031,18 @@ app.get('/GetVendorChallanDeletionHistory', (req, res) => {
 });
 
 
-app.get('/GetVendorChallanDeletionHistory/:DeletionHistory_id', (req, res) => {
+app.get('/GetVendorChallanDeletionHistorybyid/:DeletionHistory_id', (req, res) => {
+    const token = req.headers['x-access-token'];
+    const DeletionHistory_id = req.params.DeletionHistory_id;
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
 
-        const token = req.headers['x-access-token'];
-
-        const DeletionHistory_id =
-            req.params.DeletionHistory_id;
-
-
-        if (!token) {
+        if (err) {
 
             return res.status(401).json({
                 success: false,
@@ -6049,108 +6052,96 @@ app.get('/GetVendorChallanDeletionHistory/:DeletionHistory_id', (req, res) => {
         }
 
 
-        jwt.verify(token, secrect, (err, decoded) => {
+        if (decoded.Role !== 'Admin') {
 
-            if (err) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    'Only Admin can view deletion history'
+            });
 
-                return res.status(401).json({
-                    success: false,
-                    message: 'Unauthorized'
-                });
-
-            }
-
-
-            if (decoded.Role !== 'Admin') {
-
-                return res.status(403).json({
-                    success: false,
-                    message:
-                        'Only Admin can view deletion history'
-                });
-
-            }
+        }
 
 
-            connection.query(
-                `
+        connection.query(
+            `
                 SELECT *
                 FROM vendorchallan_deletion_history
                 WHERE DeletionHistory_id = ?
                 `,
-                [DeletionHistory_id],
+            [DeletionHistory_id],
 
-                (err, result) => {
+            (err, result) => {
 
-                    if (err) {
+                if (err) {
 
-                        return res.status(500).json({
+                    return res.status(500).json({
 
-                            success: false,
+                        success: false,
 
-                            message: err.sqlMessage
-
-                        });
-
-                    }
-
-
-                    if (!result.length) {
-
-                        return res.status(404).json({
-
-                            success: false,
-
-                            message:
-                                'Deletion history not found'
-
-                        });
-
-                    }
-
-
-                    const history = result[0];
-
-
-                    // Convert JSON strings back to objects
-                    try {
-
-                        history.Challan_Data =
-                            JSON.parse(history.Challan_Data);
-
-                    } catch (e) {
-
-                        history.Challan_Data = null;
-
-                    }
-
-
-                    try {
-
-                        history.Product_Data =
-                            JSON.parse(history.Product_Data);
-
-                    } catch (e) {
-
-                        history.Product_Data = [];
-
-                    }
-
-
-                    return res.json({
-
-                        success: true,
-
-                        data: history
+                        message: err.sqlMessage
 
                     });
 
                 }
-            );
 
-        });
 
-    }
+                if (!result.length) {
+
+                    return res.status(404).json({
+
+                        success: false,
+
+                        message:
+                            'Deletion history not found'
+
+                    });
+
+                }
+
+
+                const history = result[0];
+
+
+                // Convert JSON strings back to objects
+                try {
+
+                    history.Challan_Data =
+                        JSON.parse(history.Challan_Data);
+
+                } catch (e) {
+
+                    history.Challan_Data = null;
+
+                }
+
+
+                try {
+
+                    history.Product_Data =
+                        JSON.parse(history.Product_Data);
+
+                } catch (e) {
+
+                    history.Product_Data = [];
+
+                }
+
+
+                return res.json({
+
+                    success: true,
+
+                    data: history
+
+                });
+
+            }
+        );
+
+    });
+
+}
 );
 
 
