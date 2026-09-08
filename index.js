@@ -858,6 +858,445 @@ app.post('/Deletevendor/:Vendor_id', (req, res) => {
 
 });
 
+app.post('/DeletevendorwithReason/:Vendor_id', (req, res) => {
+
+    const token = req.headers['x-access-token'];
+
+    const {
+        Password,
+        Deletion_Reason
+    } = req.body;
+
+    const Vendor_id = req.params.Vendor_id;
+
+
+    // ==========================================
+    // 1. TOKEN VALIDATION
+    // ==========================================
+
+    if (!token) {
+
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+
+    }
+
+
+    // ==========================================
+    // 2. DELETION REASON VALIDATION
+    // ==========================================
+
+    if (!Deletion_Reason || Deletion_Reason.trim() === '') {
+
+        return res.status(400).json({
+            success: false,
+            message: 'Deletion reason is required'
+        });
+
+    }
+
+
+    if (Deletion_Reason.trim().length < 5) {
+
+        return res.status(400).json({
+            success: false,
+            message: 'Please enter a valid deletion reason'
+        });
+
+    }
+
+
+    // ==========================================
+    // 3. VERIFY JWT
+    // ==========================================
+
+    jwt.verify(token, secrect, (err, decoded) => {
+
+        if (err) {
+
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+
+        }
+
+
+        // ==========================================
+        // 4. ADMIN ROLE CHECK
+        // ==========================================
+
+        if (decoded.Role !== 'Admin') {
+
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can delete Vendor'
+            });
+
+        }
+
+
+        // ==========================================
+        // 5. GET ADMIN
+        // ==========================================
+
+        connection.query(
+            'SELECT * FROM admin WHERE Admin_id = ?',
+            [decoded.Admin_id],
+
+            (err, adminData) => {
+
+                if (err) {
+
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+
+                }
+
+
+                if (!adminData.length) {
+
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Admin not found'
+                    });
+
+                }
+
+
+                // ==========================================
+                // 6. PASSWORD CHECK
+                // ==========================================
+
+                if (adminData[0].Password !== Password) {
+
+                    return res.status(401).json({
+                        success: false,
+                        message: 'Incorrect Admin Password'
+                    });
+
+                }
+
+
+                const adminName =
+                    adminData[0].Name ||
+                    adminData[0].Admin_Name ||
+                    adminData[0].Username ||
+                    'Admin';
+
+
+                // ==========================================
+                // 7. START TRANSACTION
+                // ==========================================
+
+                connection.beginTransaction((err) => {
+
+                    if (err) {
+
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+
+                    }
+                    connection.query(
+                        `
+                        SELECT *
+                        FROM vendor
+                        WHERE Vendor_id = ?
+                        `,
+                        [Vendor_id],
+                        (err, vendorData) => {
+                            if (err) {
+                                return rollbackDelete(
+                                    res,
+                                    err
+                                );
+                            }
+                            if (!vendorData.length) {
+                                return rollbackDelete(
+                                    res,
+                                    {
+                                        sqlMessage: 'Vendor not found'
+                                    }
+                                );
+                            }
+                            const vendor = vendorData[0];
+                            const vendorCode =
+                                vendor.Vendor_Code ||
+                                vendor.VendorCode ||
+                                null;
+                            connection.query(
+                                `
+                                INSERT INTO vendor_deletion_history
+                                (
+                                    Vendor_id,
+                                    Vendor_Code,
+                                    Deleted_By_Admin_id,
+                                    Deleted_By_Admin_Name,
+                                    Deletion_Reason,
+                                    Deleted_Date,
+                                    Vendor_Data
+                                )
+                                VALUES (?, ?, ?, ?, ?, NOW(), ?)
+                                `,
+
+                                [
+                                    Vendor_id,
+
+                                    vendorCode,
+
+                                    decoded.Admin_id,
+
+                                    adminName,
+
+                                    Deletion_Reason.trim(),
+
+                                    JSON.stringify(vendor)
+                                ],
+
+                                (err) => {
+
+                                    if (err) {
+
+                                        return rollbackDelete(
+                                            res,
+                                            err
+                                        );
+
+                                    }
+                                    connection.query(
+                                        `
+                                        DELETE FROM vendor
+                                        WHERE Vendor_id = ?
+                                        `,
+                                        [Vendor_id],
+                                        (err, deleteResult) => {
+                                            if (err) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    err
+                                                );
+                                            }
+                                            if (deleteResult.affectedRows === 0) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    {
+                                                        sqlMessage:
+                                                            'Vendor could not be deleted'
+                                                    }
+                                                );
+                                            }
+                                            connection.commit(
+                                                (err) => {
+                                                    if (err) {
+                                                        return rollbackDelete(
+                                                            res,
+                                                            err
+                                                        );
+                                                    }
+                                                    return res.json({
+
+                                                        success: true,
+
+                                                        message:
+                                                            'Vendor Deleted Successfully'
+
+                                                    });
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    );
+                });
+            });
+    });
+});
+
+// app.post('/DeletevendorwithReason/:Vendor_id', (req, res) => {
+//     const token = req.headers['x-access-token'];
+//     const { Password, Deletion_Reason } = req.body;
+//     const Vendor_id = req.params.Vendor_id;
+//     // -----------------------------------
+//     // 1. Validate Token
+//     // -----------------------------------
+//     if (!token) {
+//         return res.status(401).json({
+//             success: false,
+//             message: 'Unauthorized'
+//         });
+//     }
+//     // -----------------------------------
+//     // 2. Validate Deletion Reason
+//     // -----------------------------------
+//     if (!Deletion_Reason || Deletion_Reason.trim() === '') {
+//         return res.status(400).json({
+//             success: false,
+//             message: 'Deletion reason is required'
+//         });
+//     }
+//     if (Deletion_Reason.trim().length < 5) {
+//         return res.status(400).json({
+//             success: false,
+//             message: 'Please enter a valid deletion reason'
+//         });
+//     }
+//     // -----------------------------------
+//     // 3. Verify JWT
+//     // ----------------------------------
+//     jwt.verify(token, secrect, (err, decoded) => {
+//         if (err) {
+//             return res.status(401).json({
+//                 success: false,
+//                 message: 'Unauthorized'
+//             });
+//         }
+//         // -----------------------------------
+//         // 4. Check Admin Role
+//         // -----------------------------------
+//         if (decoded.Role !== 'Admin') {
+//             return res.status(403).json({
+//                 success: false,
+//                 message: 'Only Admin can delete Challan'
+//             });
+//         }
+//         // -----------------------------------
+//         // 5. Get Admin
+//         // -----------------------------------
+//         connection.query(
+//             'SELECT * FROM admin WHERE Admin_id = ?',
+//             [decoded.Admin_id],
+//             (err, adminData) => {
+//                 if (err) {
+//                     return res.status(500).json({
+//                         success: false,
+//                         message: err.sqlMessage
+//                     });
+//                 }
+//                 if (!adminData.length) {
+//                     return res.status(404).json({
+//                         success: false,
+//                         message: 'Admin not found'
+//                     });
+//                 }
+//                 // -----------------------------------
+//                 // 6. Check Password
+//                 // -----------------------------------
+//                 if (adminData[0].Password !== Password) {
+//                     return res.status(401).json({
+//                         success: false,
+//                         message: 'Incorrect Admin Password'
+//                     });
+//                 }
+//                 const adminName =
+//                     adminData[0].Name ||
+//                     adminData[0].Admin_Name ||
+//                     adminData[0].Username ||
+//                     'Admin';
+//                 // -----------------------------------
+//                 // 7. Start Transaction
+//                 // -----------------------------------
+//                 connection.beginTransaction((err) => {
+//                     if (err) {
+//                         return res.status(500).json({
+//                             success: false,
+//                             message: err.sqlMessage
+//                         });
+//                     }
+//                     // -----------------------------------
+//                     // 8. Get Challan Data
+//                     // -----------------------------------
+//                     connection.query(
+//                         `
+//                         SELECT *
+//                         FROM vendor
+//                         WHERE Vendor_id = ?
+//                         `,
+//                         [Vendor_id],
+//                         (err, challanData) => {
+//                             if (err) {
+//                                 return rollbackDelete(
+//                                     res,
+//                                     err
+//                                 );
+//                             }
+
+//                             if (!challanData.length) {
+//                                 return rollbackDelete(
+//                                     res,
+//                                     {
+//                                         sqlMessage: 'Vendor not found'
+//                                     }
+//                                 );
+//                             }
+
+//                             connection.query(
+//                                 `
+//                                                         DELETE FROM vendor
+//                                                         WHERE Vendor_id = ?
+//                                                         `,
+//                                 [Vendor_id],
+//                                 (err) => {
+//                                     if (err) {
+//                                         return rollbackDelete(
+//                                             res,
+//                                             err
+//                                         );
+//                                     }
+//                                     // -----------------------------------
+//                                     // 13. Delete Challan
+//                                     // -----------------------------------
+
+//                                     connection.query(
+//                                         `  DELETE FROM vendor
+//                                                         WHERE Vendor_id = ?
+//                                                                 `,
+//                                         [Vendor_id],
+
+//                                         (err) => {
+
+//                                             if (err) {
+//                                                 return rollbackDelete(
+//                                                     res,
+//                                                     err
+//                                                 );
+//                                             }
+//                                             // -----------------------------------
+//                                             // 14. Commit Transaction
+//                                             // -----------------------------------
+//                                             connection.commit(
+//                                                 (err) => {
+//                                                     if (err) {
+//                                                         return rollbackDelete(
+//                                                             res,
+//                                                             err
+//                                                         );
+//                                                     }
+//                                                     // -----------------------------------
+//                                                     // SUCCESS
+//                                                     // -----------------------------------
+//                                                     res.json({
+//                                                         success: true,
+//                                                         message:
+//                                                             'Vendor Deleted Successfully'
+//                                                     });
+//                                                 });
+//                                         });
+//                                 });
+
+//                         });
+//                 });
+//             });
+//     });
+// });
+
 app.delete('/Deletevendor/:Vendor_id', (req, res) => {
     const token = req.headers['x-access-token'];
     if (!token) {
@@ -1010,7 +1449,6 @@ app.post('/SearchVendorbyStatus', (req, res) => {
 // Vendor Challan End
 
 // Inlet challan API
-
 app.post("/AddInletchallan", (req, res) => {
     const {
         Customer_Name,
@@ -2153,6 +2591,245 @@ app.post('/DeleteChallan/:Challan_id', (req, res) => {
 
                                     });
 
+                                });
+                        });
+                });
+            });
+    });
+});
+
+app.post('/DeleteInletChallanbyDelationReason/:Challan_id', (req, res) => {
+    const token = req.headers['x-access-token'];
+    const { Password, Deletion_Reason } = req.body;
+    const Challan_id = req.params.Challan_id;
+    // -----------------------------------
+    // 1. Validate Token
+    // -----------------------------------
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    // -----------------------------------
+    // 2. Validate Deletion Reason
+    // -----------------------------------
+    if (!Deletion_Reason || Deletion_Reason.trim() === '') {
+        return res.status(400).json({
+            success: false,
+            message: 'Deletion reason is required'
+        });
+    }
+    if (Deletion_Reason.trim().length < 5) {
+        return res.status(400).json({
+            success: false,
+            message: 'Please enter a valid deletion reason'
+        });
+    }
+    // -----------------------------------
+    // 3. Verify JWT
+    // ----------------------------------
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        // -----------------------------------
+        // 4. Check Admin Role
+        // -----------------------------------
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can delete Challan'
+            });
+        }
+        // -----------------------------------
+        // 5. Get Admin
+        // -----------------------------------
+        connection.query(
+            'SELECT * FROM admin WHERE Admin_id = ?',
+            [decoded.Admin_id],
+            (err, adminData) => {
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+                }
+                if (!adminData.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Admin not found'
+                    });
+                }
+                // -----------------------------------
+                // 6. Check Password
+                // -----------------------------------
+                if (adminData[0].Password !== Password) {
+                    return res.status(401).json({
+                        success: false,
+                        message: 'Incorrect Admin Password'
+                    });
+                }
+                const adminName =
+                    adminData[0].Name ||
+                    adminData[0].Admin_Name ||
+                    adminData[0].Username ||
+                    'Admin';
+                // -----------------------------------
+                // 7. Start Transaction
+                // -----------------------------------
+                connection.beginTransaction((err) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+                    }
+                    // -----------------------------------
+                    // 8. Get Challan Data
+                    // -----------------------------------
+                    connection.query(
+                        `
+                        SELECT *
+                        FROM inletchallan
+                        WHERE Challan_id = ?
+                        `,
+                        [Challan_id],
+                        (err, challanData) => {
+                            if (err) {
+                                return rollbackDelete(
+                                    res,
+                                    err
+                                );
+                            }
+
+                            if (!challanData.length) {
+                                return rollbackDelete(
+                                    res,
+                                    {
+                                        sqlMessage: 'Challan not found'
+                                    }
+                                );
+                            }
+                            // -----------------------------------
+                            // 9. Get Product Data
+                            // -----------------------------------
+                            connection.query(
+                                `SELECT * FROM inletproducts WHERE Challan_id = ?`,
+                                [Challan_id],
+                                (err, productData) => {
+                                    if (err) {
+                                        return rollbackDelete(
+                                            res,
+                                            err
+                                        );
+                                    }
+                                    // -----------------------------------
+                                    // 10. Insert Deletion History
+                                    // -----------------------------------
+
+                                    const Challan_Code =
+                                        challanData[0].Challan_Code ||
+                                        challanData[0].Challan_Code ||
+                                        null;
+
+
+                                    connection.query(
+                                        `
+                                        INSERT INTO inletchallan_deletion_history
+                                        (
+                                            Challan_id,
+                                            Challan_Code,
+                                            Deleted_By_Admin_id,
+                                            Deleted_By_Admin_Name,
+                                            Deletion_Reason,
+                                            Deleted_Date,
+                                            Challan_Data,
+                                            Product_Data
+                                        )
+                                        VALUES (?, ?, ?, ?, ?, NOW(), ?, ?)
+                                        `,
+                                        [
+                                            Challan_id,
+                                            Challan_Code,
+                                            decoded.Admin_id,
+                                            adminName,
+                                            Deletion_Reason.trim(),
+                                            JSON.stringify(challanData[0]),
+                                            JSON.stringify(productData)
+                                        ],
+
+                                        (err) => {
+                                            if (err) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    err
+                                                );
+                                            }
+                                            // -----------------------------------
+                                            // 11. Delete Operations
+                                            // -----------------------------------
+
+
+                                            connection.query(
+                                                `
+                                                        DELETE FROM inletproducts
+                                                        WHERE Challan_id = ?
+                                                        `,
+                                                [Challan_id],
+                                                (err) => {
+                                                    if (err) {
+                                                        return rollbackDelete(
+                                                            res,
+                                                            err
+                                                        );
+                                                    }
+                                                    // -----------------------------------
+                                                    // 13. Delete Challan
+                                                    // -----------------------------------
+
+                                                    connection.query(
+                                                        `DELETE
+                                                                FROM inletchallan
+                                                                WHERE Challan_id = ?
+                                                                `,
+                                                        [Challan_id],
+
+                                                        (err) => {
+
+                                                            if (err) {
+                                                                return rollbackDelete(
+                                                                    res,
+                                                                    err
+                                                                );
+                                                            }
+                                                            // -----------------------------------
+                                                            // 14. Commit Transaction
+                                                            // -----------------------------------
+                                                            connection.commit(
+                                                                (err) => {
+                                                                    if (err) {
+                                                                        return rollbackDelete(
+                                                                            res,
+                                                                            err
+                                                                        );
+                                                                    }
+                                                                    // -----------------------------------
+                                                                    // SUCCESS
+                                                                    // -----------------------------------
+                                                                    res.json({
+                                                                        success: true,
+                                                                        message:
+                                                                            'Challan Deleted Successfully'
+                                                                    });
+                                                                });
+                                                        });
+                                                });
+
+                                        });
                                 });
                         });
                 });
@@ -5961,37 +6638,24 @@ app.get('/GetVendorChallanHistory/:VendorChallan_id', (req, res) => {
 app.get('/GetVendorChallanDeletionHistory', (req, res) => {
     const token = req.headers['x-access-token'];
     if (!token) {
-
         return res.status(401).json({
             success: false,
             message: 'Unauthorized'
         });
-
     }
-
-
     jwt.verify(token, secrect, (err, decoded) => {
-
         if (err) {
-
             return res.status(401).json({
                 success: false,
                 message: 'Unauthorized'
             });
-
         }
-
-
         if (decoded.Role !== 'Admin') {
-
             return res.status(403).json({
                 success: false,
                 message: 'Only Admin can view deletion history'
             });
-
         }
-
-
         connection.query(
             `
             SELECT
@@ -5999,35 +6663,19 @@ app.get('/GetVendorChallanDeletionHistory', (req, res) => {
             FROM vendorchallan_deletion_history
             ORDER BY Deleted_Date DESC
             `,
-
             (err, result) => {
-
                 if (err) {
-
                     return res.status(500).json({
-
                         success: false,
-
                         message: err.sqlMessage
-
                     });
-
                 }
-
-
                 return res.json({
-
                     success: true,
-
                     data: result
-
                 });
-
-            }
-        );
-
+            });
     });
-
 });
 
 
@@ -6041,25 +6689,18 @@ app.get('/GetVendorChallanDeletionHistorybyid/:DeletionHistory_id', (req, res) =
         });
     }
     jwt.verify(token, secrect, (err, decoded) => {
-
         if (err) {
-
             return res.status(401).json({
                 success: false,
                 message: 'Unauthorized'
             });
-
         }
-
-
         if (decoded.Role !== 'Admin') {
-
             return res.status(403).json({
                 success: false,
                 message:
                     'Only Admin can view deletion history'
             });
-
         }
 
 
@@ -6111,39 +6752,308 @@ app.get('/GetVendorChallanDeletionHistorybyid/:DeletionHistory_id', (req, res) =
 
                 } catch (e) {
 
-                    history.Challan_Data = null;
+                    history.Challan_Data = [];
 
                 }
 
 
                 try {
-
                     history.Product_Data =
                         JSON.parse(history.Product_Data);
+                } catch (e) {
+                    history.Product_Data = [];
+                }
+
+                return res.json({
+                    success: true,
+                    data: history
+                });
+            });
+    });
+});
+
+
+app.get('/GetInletChallanDeletionHistory', (req, res) => {
+    const token = req.headers['x-access-token'];
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can view deletion history'
+            });
+        }
+        connection.query(
+            `
+            SELECT
+               *
+            FROM inletchallan_deletion_history
+            ORDER BY Deleted_Date DESC
+            `,
+            (err, result) => {
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+                }
+                return res.json({
+                    success: true,
+                    data: result
+                });
+            });
+    });
+});
+
+app.get('/GetInletChallanDeletionHistorybyid/:Deletionchallan_id', (req, res) => {
+    const token = req.headers['x-access-token'];
+    const Deletionchallan_id = req.params.Deletionchallan_id;
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message:
+                    'Only Admin can view deletion history'
+            });
+        }
+
+
+        connection.query(
+            `SELECT * FROM inletchallan_deletion_history WHERE Deletionchallan_id = ?`,
+            [Deletionchallan_id],
+
+            (err, result) => {
+
+                if (err) {
+
+                    return res.status(500).json({
+
+                        success: false,
+
+                        message: err.sqlMessage
+
+                    });
+
+                }
+
+
+                if (!result.length) {
+
+                    return res.status(404).json({
+
+                        success: false,
+
+                        message: 'Deletion history not found'
+
+                    });
+
+                }
+
+
+                const history = result[0];
+
+
+                // Convert JSON strings back to objects
+                try {
+
+                    history.Challan_Data =
+                        JSON.parse(history.Challan_Data);
 
                 } catch (e) {
 
+                    history.Challan_Data = [];
+
+                }
+
+
+                try {
+                    history.Product_Data =
+                        JSON.parse(history.Product_Data);
+                } catch (e) {
                     history.Product_Data = [];
+                }
+
+                return res.json({
+                    success: true,
+                    data: history
+                });
+            });
+    });
+});
+
+
+
+app.get('/GetVendorDeletionHistory', (req, res) => {
+    const token = req.headers['x-access-token'];
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can view deletion history'
+            });
+        }
+        connection.query(
+            `
+            SELECT
+                VendorDeletion_id,
+                Vendor_id,
+                Vendor_Code,
+                Deleted_By_Admin_id,
+                Deleted_By_Admin_Name,
+                Deletion_Reason,
+                Deleted_Date
+            FROM vendor_deletion_history
+            ORDER BY Deleted_Date DESC
+            `,
+
+            (err, result) => {
+
+                if (err) {
+
+                    return res.status(500).json({
+
+                        success: false,
+
+                        message: err.sqlMessage
+
+                    });
 
                 }
 
 
                 return res.json({
-
                     success: true,
-
-                    data: history
-
+                    data: result
                 });
 
             }
         );
 
     });
+});
 
-}
+app.get(
+    '/GetVendorDeletionHistoryById/:VendorDeletion_id',
+    (req, res) => {
+
+        const token = req.headers['x-access-token'];
+
+        const VendorDeletion_id =
+            req.params.VendorDeletion_id;
+
+
+        if (!token) {
+
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+
+        }
+
+
+        jwt.verify(token, secrect, (err, decoded) => {
+
+            if (err) {
+
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized'
+                });
+
+            }
+
+
+            if (decoded.Role !== 'Admin') {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        'Only Admin can view deletion history'
+                });
+
+            }
+
+
+            connection.query(
+                `
+                SELECT *
+                FROM vendor_deletion_history
+                WHERE VendorDeletion_id = ?
+                `,
+
+                [VendorDeletion_id],
+                (err, result) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+                    }
+
+                    if (!result.length) {
+                        return res.status(404).json({
+                            success: false,
+                            message: 'Deletion history not found'
+                        });
+                    }
+                    const history = result[0];
+                    try {
+                        history.Vendor_Data =
+                            history.Vendor_Data
+                                ? JSON.parse(
+                                    history.Vendor_Data
+                                )
+                                : null;
+
+                    } catch (e) {
+                        history.Vendor_Data = null;
+                    }
+
+                    return res.json({
+                        success: true,
+                        data: history
+                    });
+
+                });
+        });
+    }
 );
-
 
 app.listen(3000, () => {
     console.log('Server is Running On Port 3000');
