@@ -204,67 +204,405 @@ app.put('/UpdateAdmin/:Admin_id', (req, res) => {
     }
 });
 
-app.post('/DeleteAdmin/:Admin_id', (req, res) => {
+app.post('/DeleteAdminwithReason/:Admin_id', (req, res) => {
     const token = req.headers['x-access-token'];
-    const { Password } = req.body;
+    const {
+        Password,
+        Deletion_Reason
+    } = req.body;
+    const Admin_id = req.params.Admin_id;
+    // ==========================================
+    // 1. TOKEN VALIDATION
+    // ==========================================
 
     if (!token) {
-        return res.status(401).send({
+        return res.status(401).json({
             success: false,
-            message: "Unauthorized"
+            message: 'Unauthorized'
         });
     }
+    // ==========================================
+    // 2. DELETION REASON VALIDATION
+    // ==========================================
+    if (!Deletion_Reason || Deletion_Reason.trim() === '') {
+        return res.status(400).json({
+            success: false,
+            message: 'Deletion reason is required'
+        });
+    }
+    if (Deletion_Reason.trim().length < 5) {
 
+        return res.status(400).json({
+            success: false,
+            message: 'Please enter a valid deletion reason'
+        });
+
+    }
+    // ==========================================
+    // 3. VERIFY JWT
+    // ==========================================
     jwt.verify(token, secrect, (err, decoded) => {
-
         if (err) {
-            return res.status(401).send({
+            return res.status(401).json({
                 success: false,
-                message: "Unauthorized"
+                message: 'Unauthorized'
             });
         }
-
-        connection.query(
-            "SELECT * FROM admin WHERE Admin_id=?",
-            [decoded.Admin_id],
-            (err, data) => {
-
-                if (err)
-                    return res.status(500).send(err);
-
-                if (data.length == 0) {
-                    return res.send({
-                        success: false,
-                        message: "Admin not found"
-                    });
-                }
-
-                if (data[0].Password != Password) {
-                    return res.send({
-                        success: false,
-                        message: "Incorrect Password Not Authorized person."
-                    });
-                }
-                connection.query(
-                    "DELETE FROM admin WHERE Admin_id=?",
-                    [req.params.Admin_id],
-                    (err, result) => {
-
-                        if (err)
-                            return res.status(500).send(err);
-
-                        res.send({
-                            success: true,
-                            message: "Admin Deleted Successfully"
-                        });
-
-                    });
-
+        // ==========================================
+        // 4. ADMIN ROLE CHECK
+        // ==========================================
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can delete Vendor'
             });
+        }
+        // ==========================================
+        // 5. GET ADMIN
+        // ==========================================
+        connection.query(
+            'SELECT * FROM admin WHERE Admin_id = ?',
+            [decoded.Admin_id],
+            (err, adminData) => {
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+                }
+                if (!adminData.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Admin not found'
+                    });
+                }
+                // ==========================================
+                // 6. PASSWORD CHECK
+                // ==========================================
+
+                if (adminData[0].Password !== Password) {
+                    return res.status(401).json({
+                        success: false,
+                        message: 'Incorrect Admin Password'
+                    });
+                }
+
+                const adminName =
+                    adminData[0].Name ||
+                    adminData[0].Admin_Name ||
+                    adminData[0].Username ||
+                    'Admin';
+                // ==========================================
+                // 7. START TRANSACTION
+                // ==========================================
+                connection.beginTransaction((err) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+                    }
+                    connection.query(
+                        `
+                        SELECT *
+                        FROM admin
+                        WHERE Admin_id = ?
+                        `,
+                        [Admin_id],
+                        (err, adminData) => {
+                            if (err) {
+                                return rollbackDelete(
+                                    res,
+                                    err
+                                );
+                            }
+                            if (!adminData.length) {
+                                return rollbackDelete(
+                                    res,
+                                    {
+                                        sqlMessage: 'admin not found'
+                                    }
+                                );
+                            }
+                            const admin = adminData[0];
+                            const Code =
+                                admin.Code ||
+                                admin.Code ||
+                                null;
+                            connection.query(
+                                `
+                                INSERT INTO admin_deletion_history
+                                (
+                                    Admin_id,
+                                    Code,
+                                    Deleted_By_Admin_id,
+                                    Deleted_By_Admin_Name,
+                                    Deletion_Reason,
+                                    Deleted_Date,
+                                    Admin_Data	
+                                )
+                                VALUES (?, ?, ?, ?, ?, NOW(), ?)
+                                `,
+
+                                [
+                                    Admin_id,
+                                    Code,
+                                    decoded.Admin_id,
+                                    adminName,
+                                    Deletion_Reason.trim(),
+                                    JSON.stringify(admin)
+                                ],
+
+                                (err) => {
+
+                                    if (err) {
+                                        return rollbackDelete(
+                                            res,
+                                            err
+                                        );
+                                    }
+                                    connection.query(
+                                        `
+                                        DELETE FROM admin
+                                        WHERE Admin_id = ?
+                                        `,
+                                        [Admin_id],
+                                        (err, deleteResult) => {
+                                            if (err) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    err
+                                                );
+                                            }
+                                            if (deleteResult.affectedRows === 0) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    {
+                                                        sqlMessage:
+                                                            'Admin could not be deleted'
+                                                    }
+                                                );
+                                            }
+                                            connection.commit(
+                                                (err) => {
+                                                    if (err) {
+                                                        return rollbackDelete(
+                                                            res,
+                                                            err
+                                                        );
+                                                    }
+                                                    return res.json({
+                                                        success: true,
+                                                        message: 'Admin Deleted Successfully'
+                                                    });
+                                                });
+                                        });
+                                });
+                        });
+                });
+            });
+    });
+});
+
+
+app.get('/GetAdminDeletionHistory', (req, res) => {
+    const token = req.headers['x-access-token'];
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can view deletion history'
+            });
+        }
+        connection.query(
+            ` SELECT *
+            FROM admin_deletion_history
+            ORDER BY Deleted_Date DESC
+            `,
+            (err, result) => {
+
+                if (err) {
+
+                    return res.status(500).json({
+
+                        success: false,
+
+                        message: err.sqlMessage
+
+                    });
+
+                }
+
+
+                return res.json({
+                    success: true,
+                    data: result
+                });
+
+            }
+        );
 
     });
-
 });
+
+app.get('/GetAdminDeletionHistoryById/:AdminDeletion_id',
+    (req, res) => {
+
+        const token = req.headers['x-access-token'];
+
+        const AdminDeletion_id =
+            req.params.AdminDeletion_id;
+
+
+        if (!token) {
+
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+
+        }
+
+
+        jwt.verify(token, secrect, (err, decoded) => {
+
+            if (err) {
+
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized'
+                });
+
+            }
+
+
+            if (decoded.Role !== 'Admin') {
+
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        'Only Admin can view deletion history'
+                });
+
+            }
+            connection.query(
+                `
+                SELECT *
+                FROM admin_deletion_history
+                WHERE AdminDeletion_id = ?
+                `,
+
+                [AdminDeletion_id],
+                (err, result) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+                    }
+
+                    if (!result.length) {
+                        return res.status(404).json({
+                            success: false,
+                            message: 'Deletion history not found'
+                        });
+                    }
+                    const history = result[0];
+                    try {
+                        history.Admin_Data =
+                            history.Admin_Data
+                                ? JSON.parse(
+                                    history.Admin_Data
+                                )
+                                : null;
+                    } catch (e) {
+                        history.Admin_Data = null;
+                    }
+                    return res.json({
+                        success: true,
+                        data: history
+                    });
+
+                });
+        });
+    }
+);
+
+
+
+// app.post('/DeleteAdmin/:Admin_id', (req, res) => {
+//     const token = req.headers['x-access-token'];
+//     const { Password } = req.body;
+
+//     if (!token) {
+//         return res.status(401).send({
+//             success: false,
+//             message: "Unauthorized"
+//         });
+//     }
+
+//     jwt.verify(token, secrect, (err, decoded) => {
+
+//         if (err) {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: "Unauthorized"
+//             });
+//         }
+
+//         connection.query(
+//             "SELECT * FROM admin WHERE Admin_id=?",
+//             [decoded.Admin_id],
+//             (err, data) => {
+
+//                 if (err)
+//                     return res.status(500).send(err);
+
+//                 if (data.length == 0) {
+//                     return res.send({
+//                         success: false,
+//                         message: "Admin not found"
+//                     });
+//                 }
+
+//                 if (data[0].Password != Password) {
+//                     return res.send({
+//                         success: false,
+//                         message: "Incorrect Password Not Authorized person."
+//                     });
+//                 }
+//                 connection.query(
+//                     "DELETE FROM admin WHERE Admin_id=?",
+//                     [req.params.Admin_id],
+//                     (err, result) => {
+
+//                         if (err)
+//                             return res.status(500).send(err);
+
+//                         res.send({
+//                             success: true,
+//                             message: "Admin Deleted Successfully"
+//                         });
+
+//                     });
+
+//             });
+
+//     });
+
+// });
 
 app.get('/NumberofAdmin', (req, res) => {
     const countquery = `SELECT COUNT(*) AS TotalAdmin FROM admin`;
@@ -324,7 +662,6 @@ app.post('/AdmindatabyStatus', (req, res) => {
         }
     });
 });
-
 // Admin API End
 
 // All Customer API 
@@ -437,86 +774,287 @@ app.put('/UpdateCustomer/:Customer_id', (req, res) => {
     });
 });
 
-app.post('/Deletecustomer/:Customer_id', (req, res) => {
+app.post('/DeleteCustomerwithReason/:Customer_id', (req, res) => {
     const token = req.headers['x-access-token'];
-    const { Password } = req.body;
+    const {
+        Password,
+        Deletion_Reason
+    } = req.body;
+    const Customer_id = req.params.Customer_id;
+    // ==========================================
+    // 1. TOKEN VALIDATION
+    // ==========================================
 
     if (!token) {
-        return res.status(401).send({
+        return res.status(401).json({
             success: false,
             message: 'Unauthorized'
         });
     }
+    // ==========================================
+    // 2. DELETION REASON VALIDATION
+    // ==========================================
+    if (!Deletion_Reason || Deletion_Reason.trim() === '') {
+        return res.status(400).json({
+            success: false,
+            message: 'Deletion reason is required'
+        });
+    }
+    if (Deletion_Reason.trim().length < 5) {
 
+        return res.status(400).json({
+            success: false,
+            message: 'Please enter a valid deletion reason'
+        });
+
+    }
+    // ==========================================
+    // 3. VERIFY JWT
+    // ==========================================
     jwt.verify(token, secrect, (err, decoded) => {
-
         if (err) {
-            return res.status(401).send({
+            return res.status(401).json({
                 success: false,
                 message: 'Unauthorized'
             });
         }
-
-        if (decoded.Role !== "Admin") {
-            return res.status(403).send({
+        // ==========================================
+        // 4. ADMIN ROLE CHECK
+        // ==========================================
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
                 success: false,
-                message: 'Only Admin can delete customers.'
+                message: 'Only Admin can delete Vendor'
             });
         }
-
-        // Get logged-in admin details
+        // ==========================================
+        // 5. GET ADMIN
+        // ==========================================
         connection.query(
-            "SELECT * FROM admin WHERE Admin_id = ?",
+            'SELECT * FROM admin WHERE Admin_id = ?',
             [decoded.Admin_id],
-            async (err, adminData) => {
-
+            (err, adminData) => {
                 if (err) {
-                    return res.status(500).send({
+                    return res.status(500).json({
                         success: false,
                         message: err.sqlMessage
                     });
                 }
-
-                if (adminData.length === 0) {
-                    return res.status(404).send({
+                if (!adminData.length) {
+                    return res.status(404).json({
                         success: false,
-                        message: "Admin not found."
+                        message: 'Admin not found'
                     });
                 }
+                // ==========================================
+                // 6. PASSWORD CHECK
+                // ==========================================
 
-                // Verify password
                 if (adminData[0].Password !== Password) {
-                    return res.status(401).send({
+                    return res.status(401).json({
                         success: false,
-                        message: "Incorrect Admin Password"
+                        message: 'Incorrect Admin Password'
                     });
                 }
 
-                // Delete customer
-                connection.query(
-                    "DELETE FROM customer WHERE Customer_id = ?",
-                    [req.params.Customer_id],
-                    (err, result) => {
-
-                        if (err) {
-                            return res.status(500).send({
-                                success: false,
-                                message: err.sqlMessage
-                            });
-                        }
-
-                        return res.send({
-                            success: true,
-                            message: "Customer Deleted Successfully"
+                const adminName =
+                    adminData[0].Name ||
+                    adminData[0].Admin_Name ||
+                    adminData[0].Username ||
+                    'Admin';
+                // ==========================================
+                // 7. START TRANSACTION
+                // ==========================================
+                connection.beginTransaction((err) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
                         });
+                    }
+                    connection.query(
+                        `
+                        SELECT *
+                        FROM customer
+                        WHERE Customer_id = ?
+                        `,
+                        [Customer_id],
+                        (err, CustomerData) => {
+                            if (err) {
+                                return rollbackDelete(
+                                    res,
+                                    err
+                                );
+                            }
+                            if (!CustomerData.length) {
+                                return rollbackDelete(
+                                    res,
+                                    {
+                                        sqlMessage: 'Vendor not found'
+                                    }
+                                );
+                            }
+                            const customer = CustomerData[0];
+                            const Customer_Code =
+                                customer.Customer_Code ||
+                                customer.Customer_Code ||
+                                null;
+                            connection.query(
+                                `
+                                INSERT INTO customer_deletion_history
+                                (
+                                    Customer_id	,
+                                    Customer_Code,
+                                    Deleted_By_Admin_id,
+                                    Deleted_By_Admin_Name,
+                                    Deletion_Reason,
+                                    Deleted_Date,
+                                    Customer_Data	
+                                )
+                                VALUES (?, ?, ?, ?, ?, NOW(), ?)
+                                `,
 
-                    });
+                                [
+                                    Customer_id,
+                                    Customer_Code,
+                                    decoded.Admin_id,
+                                    adminName,
+                                    Deletion_Reason.trim(),
+                                    JSON.stringify(customer)
+                                ],
 
+                                (err) => {
+
+                                    if (err) {
+                                        return rollbackDelete(
+                                            res,
+                                            err
+                                        );
+                                    }
+                                    connection.query(
+                                        `
+                                        DELETE FROM customer
+                                        WHERE Customer_id = ?
+                                        `,
+                                        [Customer_id],
+                                        (err, deleteResult) => {
+                                            if (err) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    err
+                                                );
+                                            }
+                                            if (deleteResult.affectedRows === 0) {
+                                                return rollbackDelete(
+                                                    res,
+                                                    {
+                                                        sqlMessage:
+                                                            'Customer could not be deleted'
+                                                    }
+                                                );
+                                            }
+                                            connection.commit(
+                                                (err) => {
+                                                    if (err) {
+                                                        return rollbackDelete(
+                                                            res,
+                                                            err
+                                                        );
+                                                    }
+                                                    return res.json({
+                                                        success: true,
+                                                        message: 'Customer Deleted Successfully'
+                                                    });
+                                                });
+                                        });
+                                });
+                        });
+                });
             });
-
     });
-
 });
+
+
+// app.post('/Deletecustomer/:Customer_id', (req, res) => {
+//     const token = req.headers['x-access-token'];
+//     const { Password } = req.body;
+
+//     if (!token) {
+//         return res.status(401).send({
+//             success: false,
+//             message: 'Unauthorized'
+//         });
+//     }
+
+//     jwt.verify(token, secrect, (err, decoded) => {
+
+//         if (err) {
+//             return res.status(401).send({
+//                 success: false,
+//                 message: 'Unauthorized'
+//             });
+//         }
+
+//         if (decoded.Role !== "Admin") {
+//             return res.status(403).send({
+//                 success: false,
+//                 message: 'Only Admin can delete customers.'
+//             });
+//         }
+
+//         // Get logged-in admin details
+//         connection.query(
+//             "SELECT * FROM admin WHERE Admin_id = ?",
+//             [decoded.Admin_id],
+//             async (err, adminData) => {
+
+//                 if (err) {
+//                     return res.status(500).send({
+//                         success: false,
+//                         message: err.sqlMessage
+//                     });
+//                 }
+
+//                 if (adminData.length === 0) {
+//                     return res.status(404).send({
+//                         success: false,
+//                         message: "Admin not found."
+//                     });
+//                 }
+
+//                 // Verify password
+//                 if (adminData[0].Password !== Password) {
+//                     return res.status(401).send({
+//                         success: false,
+//                         message: "Incorrect Admin Password"
+//                     });
+//                 }
+
+//                 // Delete customer
+//                 connection.query(
+//                     "DELETE FROM customer WHERE Customer_id = ?",
+//                     [req.params.Customer_id],
+//                     (err, result) => {
+
+//                         if (err) {
+//                             return res.status(500).send({
+//                                 success: false,
+//                                 message: err.sqlMessage
+//                             });
+//                         }
+
+//                         return res.send({
+//                             success: true,
+//                             message: "Customer Deleted Successfully"
+//                         });
+
+//                     });
+
+//             });
+
+//     });
+
+// });
 
 app.delete('/Deletecustomer/:Customer_id', (req, res) => {
     const token = req.headers['x-access-token'];
@@ -667,6 +1205,119 @@ app.post('/SearchbyStatus', (req, res) => {
         }
     });
 });
+
+
+app.get('/GetCustomerDeletionHistory', (req, res) => {
+    const token = req.headers['x-access-token'];
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        if (decoded.Role !== 'Admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only Admin can view deletion history'
+            });
+        }
+        connection.query(
+            `
+            SELECT *
+            FROM customer_deletion_history
+            ORDER BY Deleted_Date DESC
+            `,
+
+            (err, result) => {
+
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
+                    });
+                }
+                return res.json({
+                    success: true,
+                    data: result
+                });
+
+            }
+        );
+
+    });
+});
+
+app.get('/GetCustomerDeletionHistoryById/:CustomerDeletion_id',
+    (req, res) => {
+        const token = req.headers['x-access-token'];
+        const CustomerDeletion_id = req.params.CustomerDeletion_id;
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized'
+            });
+        }
+        jwt.verify(token, secrect, (err, decoded) => {
+            if (err) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Unauthorized'
+                });
+            }
+            if (decoded.Role !== 'Admin') {
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        'Only Admin can view deletion history'
+                });
+
+            }
+            connection.query(
+                `
+                SELECT *
+                FROM customer_deletion_history
+                WHERE CustomerDeletion_id = ?
+                `,
+
+                [CustomerDeletion_id],
+                (err, result) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: err.sqlMessage
+                        });
+                    }
+
+                    if (!result.length) {
+                        return res.status(404).json({
+                            success: false,
+                            message: 'Deletion history not found'
+                        });
+                    }
+                    const history = result[0];
+                    try {
+                        history.Customer_Data =
+                            history.Customer_Data
+                                ? JSON.parse(history.Customer_Data)
+                                : null;
+                    } catch (e) {
+                        history.Customer_Data = null;
+                    }
+                    return res.json({
+                        success: true,
+                        data: history
+                    });
+                });
+        });
+    }
+);
 // Customer API End
 
 // Vendor Challan
@@ -1477,8 +2128,11 @@ app.post("/AddInletchallan", (req, res) => {
 
     const datePart =
         today.getFullYear().toString() +
-        String(today.getMonth() + 1).padStart(2, "0") +
-        String(today.getDate()).padStart(2, "0");
+        String(today.getMonth() + 1).padStart(2, "0")
+    // const datePart =
+    //     today.getFullYear().toString() +
+    //     String(today.getMonth() + 1).padStart(2, "0") +
+    //     String(today.getDate()).padStart(2, "0");
 
     const qNoSql = `
                     SELECT Challan_Code 
@@ -3284,8 +3938,11 @@ app.post("/NEWAddvendorchallan", (req, res) => {
 
     const datePart =
         today.getFullYear().toString() +
-        String(today.getMonth() + 1).padStart(2, "0") +
-        String(today.getDate()).padStart(2, "0");
+        String(today.getMonth() + 1).padStart(2, "0");
+    // const datePart =
+    //     today.getFullYear().toString() +
+    //     String(today.getMonth() + 1).padStart(2, "0") +
+    //     String(today.getDate()).padStart(2, "0");
 
     const codeSql = `
     SELECT VendorChallan_Code
@@ -6967,8 +7624,7 @@ app.get('/GetVendorDeletionHistory', (req, res) => {
     });
 });
 
-app.get(
-    '/GetVendorDeletionHistoryById/:VendorDeletion_id',
+app.get('/GetVendorDeletionHistoryById/:VendorDeletion_id',
     (req, res) => {
 
         const token = req.headers['x-access-token'];
