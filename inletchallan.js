@@ -2,6 +2,9 @@
 // Inlet challan API
 app.post("/AddInletchallan", (req, res) => {
     const {
+
+        
+
         Customer_Name,
         Company_Name,
         Company_Address,
