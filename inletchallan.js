@@ -3,7 +3,7 @@
 app.post("/AddInletchallan", (req, res) => {
     const {
 
-        
+        Sales_Order_Number,
 
         Customer_Name,
         Company_Name,
