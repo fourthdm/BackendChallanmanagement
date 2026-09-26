@@ -8000,7 +8000,55 @@ app.get('/AllSalesOrder', (req, res) => {
 
 });
 
+// app.get('/SalesOrderbyId/:SalesOrder_id', (req, res) => {
 
+//     const SalesOrder_id = req.params.SalesOrder_id;
+
+//     console.log(
+//         'Sales Order ID received:',
+//         SalesOrder_id
+//     );
+
+//     const sql = `
+//         SELECT *
+//         FROM salesorder
+//         WHERE SalesOrder_id = ?
+//     `;
+
+//     connection.query(
+//         sql,
+//         [SalesOrder_id],
+//         (err, result) => {
+
+//             if (err) {
+
+//                 console.error(
+//                     'Sales Order SQL Error:',
+//                     err
+//                 );
+
+//                 return res.status(500).json({
+//                     success: false,
+//                     message: 'Database error',
+//                     error: err
+//                 });
+
+//             }
+
+//             console.log(
+//                 'Sales Order DB Result:',
+//                 result
+//             );
+
+//             return res.json({
+//                 success: true,
+//                 data: result
+//             });
+
+//         }
+//     );
+
+// });
 
 app.get('/SalesOrderbyId/:SalesOrder_id', (req, res) => {
     const SalesOrder_id = req.params.SalesOrder_id;
@@ -8340,6 +8388,653 @@ app.put('/UpdateaSalesOrder/:SalesOrder_id', (req, res) => {
     });
 });
 
+app.post("/ConfirmSalesOrder/:SalesOrder_id", (req, res) => {
+
+    const SalesOrder_id =
+        req.params.SalesOrder_id;
+
+    connection.beginTransaction(err => {
+
+        if (err) {
+            return res.status(500).json({
+                success: false,
+                message: "Transaction could not start",
+                error: err
+            });
+        }
+
+        // -----------------------------------------
+        // 1. GET SALES ORDER
+        // -----------------------------------------
+
+        const orderSql = `
+            SELECT *
+            FROM salesorder
+            WHERE SalesOrder_id = ?
+            FOR UPDATE
+        `;
+
+        connection.query(
+            orderSql,
+            [SalesOrder_id],
+            (err, orderResult) => {
+
+                if (err) {
+                    return rollback(
+                        connection,
+                        res,
+                        err
+                    );
+                }
+
+                if (!orderResult.length) {
+
+                    return rollback(
+                        connection,
+                        res,
+                        {
+                            message: "Sales Order not found"
+                        },
+                        404
+                    );
+                }
+
+                const order = orderResult[0];
+
+                if (
+                    order.Sales_Order_Status !== "Draft"
+                ) {
+
+                    return rollback(
+                        connection,
+                        res,
+                        {
+                            message:
+                                "Only Draft Sales Order can be confirmed"
+                        },
+                        400
+                    );
+                }
+
+                // -----------------------------------------
+                // 2. GET SALES ORDER ITEMS
+                // -----------------------------------------
+
+                const itemSql = `
+                    SELECT *
+                    FROM salesorderitems
+                    WHERE SalesOrder_id = ?
+                `;
+
+                connection.query(
+                    itemSql,
+                    [SalesOrder_id],
+                    (err, items) => {
+
+                        if (err) {
+                            return rollback(
+                                connection,
+                                res,
+                                err
+                            );
+                        }
+
+                        if (!items.length) {
+
+                            return rollback(
+                                connection,
+                                res,
+                                {
+                                    message:
+                                        "Sales Order has no products"
+                                },
+                                400
+                            );
+                        }
+
+                        // -----------------------------------------
+                        // 3. CHECK EXCESS STOCK
+                        // -----------------------------------------
+
+                        const processItems = [];
+                        let completed = 0;
+
+                        items.forEach(item => {
+
+                            const stockSql = `
+                                SELECT *
+                                FROM product_excess_stock
+                                WHERE
+                                    (
+                                        Product_id = ?
+                                        OR
+                                        (
+                                            Product_id IS NULL
+                                            AND Product_Name = ?
+                                        )
+                                    )
+                                FOR UPDATE
+                            `;
+
+                            connection.query(
+                                stockSql,
+                                [
+                                    item.Product_id,
+                                    item.Product_Name
+                                ],
+                                (err, stockResult) => {
+
+                                    if (err) {
+                                        return rollback(
+                                            connection,
+                                            res,
+                                            err
+                                        );
+                                    }
+
+                                    let available = 0;
+
+                                    if (stockResult.length) {
+                                        available =
+                                            Number(
+                                                stockResult[0]
+                                                    .Available_Quantity
+                                            );
+                                    }
+
+                                    const ordered =
+                                        Number(
+                                            item.Ordered_Quantity
+                                        );
+
+                                    const usedExtra =
+                                        Math.min(
+                                            ordered,
+                                            available
+                                        );
+
+                                    const remainingToProduce =
+                                        Math.max(
+                                            ordered - usedExtra,
+                                            0
+                                        );
+
+                                    processItems.push({
+
+                                        item,
+
+                                        available,
+
+                                        usedExtra,
+
+                                        remainingToProduce,
+
+                                        stock:
+                                            stockResult.length
+                                                ? stockResult[0]
+                                                : null
+                                    });
+
+                                    completed++;
+
+                                    if (
+                                        completed ===
+                                        items.length
+                                    ) {
+
+                                        createChallan(
+                                            order,
+                                            processItems
+                                        );
+                                    }
+                                }
+                            );
+                        });
+
+                    }
+                );
+            }
+        );
+
+        // ==================================================
+        // CREATE CHALLAN
+        // ==================================================
+
+        function createChallan(
+            order,
+            processItems
+        ) {
+
+            const today = new Date();
+
+            const datePart =
+                today.getFullYear().toString() +
+                String(today.getMonth() + 1)
+                    .padStart(2, "0");
+
+            const codeSql = `
+                SELECT Challan_Code
+                FROM inletchallan
+                WHERE Challan_Code LIKE 'CH_${datePart}_%'
+                ORDER BY Challan_id DESC
+                LIMIT 1
+                FOR UPDATE
+            `;
+
+            connection.query(
+                codeSql,
+                (err, result) => {
+
+                    if (err) {
+                        return rollback(
+                            connection,
+                            res,
+                            err
+                        );
+                    }
+
+                    let NewCode =
+                        `CH_${datePart}_01`;
+
+                    if (result.length) {
+
+                        const last =
+                            parseInt(
+                                result[0]
+                                    .Challan_Code
+                                    .split("_")[2]
+                            );
+
+                        const next =
+                            String(last + 1)
+                                .padStart(2, "0");
+
+                        NewCode =
+                            `CH_${datePart}_${next}`;
+                    }
+
+                    // -----------------------------------------
+                    // INSERT CHALLAN
+                    // -----------------------------------------
+
+                    const challanSql = `
+                        INSERT INTO inletchallan
+                        (
+                            Challan_Code,
+                            Sales_Order_Number,
+
+                            Customer_Name,
+                            Company_Name,
+                            Company_Address,
+                            GST_No,
+                            Delivery_Address,
+
+                            Sub_Total,
+                            Total_Amount,
+                            Discount_Amount,
+                            CGST_amount,
+                            SGST_amount,
+                            Grand_Total,
+
+                            Mode_of_Transport,
+                            Transporter_Name,
+                            Vehicle_Number,
+                            Remark,
+
+                            Work_Status,
+                            Delivery_Status,
+                            Challan_Status,
+
+                            Added_Date,
+                            Updated_Date
+                        )
+                        VALUES
+                        (
+                            ?,?,?,?,?,?,
+                            ?,?,?,?,?,?,?,
+                            ?,?,?,?,?,?,
+                            NOW(),
+                            NOW()
+                        )
+                    `;
+
+                    const challanValues = [
+
+                        NewCode,
+                        order.Sales_Order_Number,
+
+                        order.Customer_Name,
+                        order.Company_Name,
+                        order.Company_Address,
+                        order.GST_No,
+                        order.Delivery_Address,
+
+                        order.Sub_Total,
+                        order.Total_Amount,
+                        order.Discount_Amount,
+                        order.CGST_amount,
+                        order.SGST_amount,
+                        order.Grand_Total,
+
+                        "",
+                        "",
+                        "",
+                        order.Remark || "",
+
+                        "In Queue",
+                        "Not Delivered",
+                        "Open"
+                    ];
+
+                    connection.query(
+                        challanSql,
+                        challanValues,
+                        (err, challanResult) => {
+
+                            if (err) {
+                                return rollback(
+                                    connection,
+                                    res,
+                                    err
+                                );
+                            }
+
+                            const Challan_id =
+                                challanResult.insertId;
+
+                            // -----------------------------------------
+                            // INSERT PRODUCTS
+                            // -----------------------------------------
+
+                            const productSql = `
+                                INSERT INTO inletproducts
+                                (
+                                    Challan_id,
+                                    SalesOrderItem_id,
+                                    Product_id,
+
+                                    Product_Name,
+                                    HSN_Code,
+
+                                    Product_Quantity,
+
+                                    Ordered_Quantity,
+                                    Produced_Quantity,
+                                    Damaged_Quantity,
+                                    Faulty_Quantity,
+                                    Good_Quantity,
+                                    Extra_Quantity,
+
+                                    Rate,
+                                    SubTotal
+                                )
+                                VALUES ?
+                            `;
+
+                            const productValues =
+                                processItems.map(x => {
+
+                                    const item = x.item;
+
+                                    return [
+
+                                        Challan_id,
+
+                                        item.SalesOrderItem_id,
+
+                                        item.Product_id ||
+                                            null,
+
+                                        item.Product_Name,
+                                        item.HSN_Code,
+
+                                        item.Ordered_Quantity,
+
+                                        item.Ordered_Quantity,
+                                        0,
+                                        0,
+                                        0,
+                                        0,
+                                        0,
+
+                                        item.Rate,
+
+                                        item.SubTotal
+                                    ];
+                                });
+
+                            connection.query(
+                                productSql,
+                                [productValues],
+                                (err, productResult) => {
+
+                                    if (err) {
+                                        return rollback(
+                                            connection,
+                                            res,
+                                            err
+                                        );
+                                    }
+
+                                    // -----------------------------------------
+                                    // CONSUME EXISTING EXTRA
+                                    // -----------------------------------------
+
+                                    consumeExtraStock(
+                                        processItems,
+                                        order.Sales_Order_Number,
+                                        Challan_id,
+                                        NewCode
+                                    );
+                                }
+                            );
+                        }
+                    );
+                }
+            );
+        }
+
+        // ==================================================
+        // CONSUME EXTRA STOCK
+        // ==================================================
+
+        function consumeExtraStock(
+            processItems,
+            Sales_Order_Number,
+            Challan_id,
+            Challan_Code
+        ) {
+
+            let completed = 0;
+
+            processItems.forEach(x => {
+
+                if (x.usedExtra <= 0) {
+
+                    completed++;
+
+                    if (
+                        completed ===
+                        processItems.length
+                    ) {
+                        updateOrder();
+                    }
+
+                    return;
+                }
+
+                const newQuantity =
+                    x.available -
+                    x.usedExtra;
+
+                const stock = x.stock;
+
+                const updateSql = `
+                    UPDATE product_excess_stock
+                    SET Available_Quantity = ?
+                    WHERE ExcessStock_id = ?
+                `;
+
+                connection.query(
+                    updateSql,
+                    [
+                        newQuantity,
+                        stock.ExcessStock_id
+                    ],
+                    err => {
+
+                        if (err) {
+                            return rollback(
+                                connection,
+                                res,
+                                err
+                            );
+                        }
+
+                        const historySql = `
+                            INSERT INTO
+                            product_excess_stock_history
+                            (
+                                Product_id,
+                                Product_Name,
+                                Sales_Order_Number,
+                                Transaction_Type,
+                                Quantity,
+                                Reference_InletProduct_id,
+                                Remark
+                            )
+                            VALUES (?, ?, ?, 'EXCESS_USED', ?, NULL, ?)
+                        `;
+
+                        connection.query(
+                            historySql,
+                            [
+                                x.item.Product_id ||
+                                    null,
+
+                                x.item.Product_Name,
+
+                                Sales_Order_Number,
+
+                                x.usedExtra,
+
+                                `Used for Sales Order ${Sales_Order_Number}`
+                            ],
+                            err => {
+
+                                if (err) {
+                                    return rollback(
+                                        connection,
+                                        res,
+                                        err
+                                    );
+                                }
+
+                                completed++;
+
+                                if (
+                                    completed ===
+                                    processItems.length
+                                ) {
+                                    updateOrder();
+                                }
+                            }
+                        );
+                    }
+                );
+            });
+        }
+
+        // ==================================================
+        // UPDATE SALES ORDER
+        // ==================================================
+
+        function updateOrder() {
+
+            const updateSql = `
+                UPDATE salesorder
+                SET
+                    Sales_Order_Status = 'Confirm',
+                    Updated_Date = NOW()
+                WHERE SalesOrder_id = ?
+            `;
+
+            connection.query(
+                updateSql,
+                [SalesOrder_id],
+                err => {
+
+                    if (err) {
+                        return rollback(
+                            connection,
+                            res,
+                            err
+                        );
+                    }
+
+                    connection.commit(err => {
+
+                        if (err) {
+                            return rollback(
+                                connection,
+                                res,
+                                err
+                            );
+                        }
+
+                        res.json({
+
+                            success: true,
+
+                            message:
+                                "Sales Order Confirmed and Inlet Challan Created",
+
+                            SalesOrder_id,
+
+                            Sales_Order_Number:
+                                processItemsOrderNumber(),
+
+                            Challan_Code:
+                                getChallanCode()
+                        });
+                    });
+                }
+            );
+        }
+
+        let confirmedOrderNumber = null;
+        let createdChallanCode = null;
+
+        function processItemsOrderNumber() {
+            return confirmedOrderNumber;
+        }
+
+        function getChallanCode() {
+            return createdChallanCode;
+        }
+
+        function rollback(
+            connection,
+            res,
+            error,
+            status = 500
+        ) {
+
+            connection.rollback(() => {
+
+                console.error(error);
+
+                res.status(status).json({
+                    success: false,
+                    message:
+                        error.message ||
+                        "Operation failed",
+                    error
+                });
+            });
+        }
+    });
+});
 
 function box(doc, x, y, w, h) {
     doc.rect(x, y, w, h).stroke();
@@ -9104,6 +9799,460 @@ app.get('/LimitedSalesOrder', (req, res) => {
     });
 
 });
+
+
+app.post(
+    "/CreateInletChallanFromSalesOrder/:SalesOrder_id",
+    (req, res) => {
+
+        const SalesOrder_id =
+            req.params.SalesOrder_id;
+
+        connection.beginTransaction(err => {
+
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    message: "Transaction failed",
+                    error: err
+                });
+            }
+
+            // ------------------------------------
+            // GET SALES ORDER
+            // ------------------------------------
+
+            const orderSql = `
+                SELECT *
+                FROM salesorder
+                WHERE SalesOrder_id = ?
+                FOR UPDATE
+            `;
+
+            connection.query(
+                orderSql,
+                [SalesOrder_id],
+                (err, orderResult) => {
+
+                    if (err) {
+                        return rollback(
+                            err,
+                            res
+                        );
+                    }
+
+                    if (!orderResult.length) {
+                        return rollback(
+                            {
+                                message:
+                                    "Sales Order not found"
+                            },
+                            res,
+                            404
+                        );
+                    }
+
+                    const order =
+                        orderResult[0];
+
+                    if (
+                        order.Sales_Order_Status !==
+                        "Confirm"
+                    ) {
+
+                        return rollback(
+                            {
+                                message:
+                                    "Sales Order must be Confirmed first"
+                            },
+                            res,
+                            400
+                        );
+                    }
+
+                    // ------------------------------------
+                    // CHECK DUPLICATE CHALLAN
+                    // ------------------------------------
+
+                    const existingSql = `
+                        SELECT Challan_id, Challan_Code
+                        FROM inletchallan
+                        WHERE Sales_Order_Number = ?
+                        LIMIT 1
+                    `;
+
+                    connection.query(
+                        existingSql,
+                        [
+                            order.Sales_Order_Number
+                        ],
+                        (err, existing) => {
+
+                            if (err) {
+                                return rollback(
+                                    err,
+                                    res
+                                );
+                            }
+
+                            if (existing.length) {
+
+                                return rollback(
+                                    {
+                                        message:
+                                            "Inlet Challan already created for this Sales Order",
+                                        Challan_Code:
+                                            existing[0]
+                                                .Challan_Code
+                                    },
+                                    res,
+                                    400
+                                );
+                            }
+
+                            getSalesOrderItems(
+                                order
+                            );
+                        }
+                    );
+                }
+            );
+
+            // ------------------------------------
+            // GET ITEMS
+            // ------------------------------------
+
+            function getSalesOrderItems(order) {
+
+                const itemSql = `
+                    SELECT *
+                    FROM salesorderitems
+                    WHERE SalesOrder_id = ?
+                `;
+
+                connection.query(
+                    itemSql,
+                    [SalesOrder_id],
+                    (err, items) => {
+
+                        if (err) {
+                            return rollback(
+                                err,
+                                res
+                            );
+                        }
+
+                        if (!items.length) {
+                            return rollback(
+                                {
+                                    message:
+                                        "Sales Order has no products"
+                                },
+                                res,
+                                400
+                            );
+                        }
+
+                        createChallan(
+                            order,
+                            items
+                        );
+                    }
+                );
+            }
+
+            // ------------------------------------
+            // CREATE CHALLAN
+            // ------------------------------------
+
+            function createChallan(
+                order,
+                items
+            ) {
+
+                const today =
+                    new Date();
+
+                const datePart =
+                    today.getFullYear()
+                        .toString() +
+                    String(
+                        today.getMonth() + 1
+                    ).padStart(2, "0");
+
+                const codeSql = `
+                    SELECT Challan_Code
+                    FROM inletchallan
+                    WHERE Challan_Code
+                    LIKE 'CH_${datePart}_%'
+                    ORDER BY Challan_id DESC
+                    LIMIT 1
+                    FOR UPDATE
+                `;
+
+                connection.query(
+                    codeSql,
+                    (err, result) => {
+
+                        if (err) {
+                            return rollback(
+                                err,
+                                res
+                            );
+                        }
+
+                        let Challan_Code =
+                            `CH_${datePart}_01`;
+
+                        if (result.length) {
+
+                            const last =
+                                parseInt(
+                                    result[0]
+                                        .Challan_Code
+                                        .split("_")[2]
+                                );
+
+                            Challan_Code =
+                                `CH_${datePart}_${String(last + 1).padStart(2, "0")}`;
+                        }
+
+                        const sql = `
+                            INSERT INTO inletchallan
+                            (
+                                Challan_Code,
+                                Sales_Order_Number,
+
+                                Customer_Name,
+                                Company_Name,
+                                Company_Address,
+                                GST_No,
+                                Delivery_Address,
+
+                                Sub_Total,
+                                Total_Amount,
+                                Discount_Amount,
+                                CGST_amount,
+                                SGST_amount,
+                                Grand_Total,
+
+                                Mode_of_Transport,
+                                Transporter_Name,
+                                Vehicle_Number,
+                                Remark,
+
+                                Work_Status,
+                                Delivery_Status,
+                                Challan_Status,
+
+                                Added_Date,
+                                Updated_Date
+                            )
+                            VALUES
+                            (
+                                ?,?,?,?,?,?,
+                                ?,?,?,?,?,?,?,
+                                ?,?,?,?,?,?,?,
+                                NOW(),
+                                NOW()
+                            )
+                        `;
+
+                        const values = [
+
+                            Challan_Code,
+
+                            order.Sales_Order_Number,
+
+                            order.Customer_Name,
+                            order.Company_Name,
+                            order.Company_Address,
+                            order.GST_No,
+                            order.Delivery_Address,
+
+                            order.Sub_Total,
+                            order.Total_Amount,
+                            order.Discount_Amount,
+                            order.CGST_amount,
+                            order.SGST_amount,
+                            order.Grand_Total,
+
+                            "",
+                            "",
+                            "",
+                            order.Remark || "",
+
+                            "In Queue",
+                            "Not Delivered",
+                            "Open"
+                        ];
+
+                        connection.query(
+                            sql,
+                            values,
+                            (err, result) => {
+
+                                if (err) {
+                                    return rollback(
+                                        err,
+                                        res
+                                    );
+                                }
+
+                                const Challan_id =
+                                    result.insertId;
+
+                                insertProducts(
+                                    Challan_id,
+                                    items,
+                                    order,
+                                    Challan_Code
+                                );
+                            }
+                        );
+                    }
+                );
+            }
+
+            // ------------------------------------
+            // INSERT PRODUCTS
+            // ------------------------------------
+
+            function insertProducts(
+                Challan_id,
+                items,
+                order,
+                Challan_Code
+            ) {
+
+                const sql = `
+                    INSERT INTO inletproducts
+                    (
+                        Challan_id,
+
+                        Product_id,
+                        Product_Name,
+                        HSN_Code,
+
+                        Product_Quantity,
+
+                        Rate,
+                        SubTotal
+                    )
+                    VALUES ?
+                `;
+
+                const values =
+                    items.map(item => [
+
+                        Challan_id,
+
+                        item.Product_id ||
+                            null,
+
+                        item.Product_Name,
+                        item.HSN_Code,
+
+                        item.Ordered_Quantity,
+
+                        item.Rate,
+                        item.SubTotal
+                    ]);
+
+                connection.query(
+                    sql,
+                    [values],
+                    err => {
+
+                        if (err) {
+                            return rollback(
+                                err,
+                                res
+                            );
+                        }
+
+                        // --------------------------------
+                        // UPDATE SALES ORDER
+                        // --------------------------------
+
+                        const updateSql = `
+                            UPDATE salesorder
+                            SET
+                                Sales_Order_Status =
+                                    'In Production',
+                                Updated_Date = NOW()
+                            WHERE SalesOrder_id = ?
+                        `;
+
+                        connection.query(
+                            updateSql,
+                            [SalesOrder_id],
+                            err => {
+
+                                if (err) {
+                                    return rollback(
+                                        err,
+                                        res
+                                    );
+                                }
+
+                                connection.commit(
+                                    err => {
+
+                                        if (err) {
+                                            return rollback(
+                                                err,
+                                                res
+                                            );
+                                        }
+
+                                        res.json({
+
+                                            success: true,
+
+                                            message:
+                                                "Inlet Challan Created Successfully",
+
+                                            Challan_id,
+
+                                            Challan_Code,
+
+                                            Sales_Order_Number:
+                                                order.Sales_Order_Number
+                                        });
+                                    }
+                                );
+                            }
+                        );
+                    }
+                );
+            }
+
+            // ------------------------------------
+            // ROLLBACK
+            // ------------------------------------
+
+            function rollback(
+                error,
+                response,
+                status = 500
+            ) {
+
+                connection.rollback(() => {
+
+                    console.error(error);
+
+                    response.status(status).json({
+                        success: false,
+                        message:
+                            error.message ||
+                            "Operation failed"
+                    });
+                });
+            }
+        });
+    }
+);
 
 
 app.listen(3000, () => {
