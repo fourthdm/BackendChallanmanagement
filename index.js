@@ -8135,7 +8135,6 @@ app.get('/TotalNumberofSalesorder', (req, res) => {
     });
 });
 
-
 app.put('/UpdateaSalesOrder/:SalesOrder_id', (req, res) => {
     const token = req.headers['x-access-token'];
     if (!token) {
@@ -9739,6 +9738,7 @@ app.get('/GetSalesorderDeletionHistoryById/:SalesorderDeleted_id',
         });
     }
 );
+
 app.get('/LimitedSalesOrder', (req, res) => {
     const newquery = `SELECT * FROM salesorder ORDER BY SalesOrder_id  DESC LIMIT 3;`;
 
@@ -9801,8 +9801,7 @@ app.get('/LimitedSalesOrder', (req, res) => {
 });
 
 
-app.post(
-    "/CreateInletChallanFromSalesOrder/:SalesOrder_id",
+app.post( "/CreateInletChallanFromSalesOrder/:SalesOrder_id",
     (req, res) => {
 
         const SalesOrder_id =
@@ -10254,6 +10253,460 @@ app.post(
     }
 );
 
+
+function addExtraStock(
+    product,
+    extra,
+    callback
+) {
+
+    const findSql = `
+        SELECT *
+        FROM product_excess_stock
+        WHERE
+            (
+                Product_id = ?
+                OR
+                (
+                    Product_id IS NULL
+                    AND Product_Name = ?
+                )
+            )
+        LIMIT 1
+    `;
+
+    connection.query(
+        findSql,
+        [
+            product.Product_id,
+            product.Product_Name
+        ],
+        (err, result) => {
+
+            if (err) {
+                return callback(err);
+            }
+
+            if (result.length) {
+
+                const stock =
+                    result[0];
+
+                const newQty =
+                    Number(
+                        stock.Available_Quantity
+                    ) + extra;
+
+                const updateSql = `
+                    UPDATE product_excess_stock
+                    SET Available_Quantity = ?
+                    WHERE ExcessStock_id = ?
+                `;
+
+                connection.query(
+                    updateSql,
+                    [
+                        newQty,
+                        stock.ExcessStock_id
+                    ],
+                    err => {
+
+                        if (err) {
+                            return callback(err);
+                        }
+
+                        addHistory(
+                            product,
+                            extra,
+                            callback
+                        );
+                    }
+                );
+
+            } else {
+
+                const insertSql = `
+                    INSERT INTO product_excess_stock
+                    (
+                        Product_id,
+                        Product_Name,
+                        HSN_Code,
+                        Available_Quantity
+                    )
+                    VALUES (?, ?, ?, ?)
+                `;
+
+                connection.query(
+                    insertSql,
+                    [
+                        product.Product_id ||
+                            null,
+
+                        product.Product_Name,
+
+                        product.HSN_Code,
+
+                        extra
+                    ],
+                    err => {
+
+                        if (err) {
+                            return callback(err);
+                        }
+
+                        addHistory(
+                            product,
+                            extra,
+                            callback
+                        );
+                    }
+                );
+            }
+        }
+    );
+}
+
+function addHistory(
+    product,
+    quantity,
+    callback
+) {
+
+    const sql = `
+        INSERT INTO product_excess_stock_history
+        (   Product_id,
+            Product_Name,
+            Transaction_Type,
+            Quantity,
+            Reference_InletProduct_id,
+            Remark)
+        VALUES (?, ?, 'EXCESS_CREATED', ?, ?, ?)
+    `;
+    connection.query(
+        sql,
+        [
+            product.Product_id || null,
+            product.Product_Name,
+            quantity,
+            product.InletProduct_id,
+            `Extra quantity created from Inlet Product ${product.InletProduct_id}`
+        ],
+        callback
+    );
+}
+
+app.put(
+    "/AdjustInletProductDamage/:InletProduct_id",
+    (req, res) => {
+
+        const InletProduct_id =
+            req.params.InletProduct_id;
+
+        const {
+            Additional_Damaged_Quantity = 0,
+            Additional_Faulty_Quantity = 0,
+            Remark = ""
+        } = req.body;
+
+        const damaged =
+            Number(
+                Additional_Damaged_Quantity
+            ) || 0;
+
+        const faulty =
+            Number(
+                Additional_Faulty_Quantity
+            ) || 0;
+
+        const adjustment =
+            damaged + faulty;
+
+        if (adjustment <= 0) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Enter damaged or faulty quantity"
+            });
+        }
+
+        const sql = `
+            SELECT *
+            FROM inletproducts
+            WHERE InletProduct_id = ?
+            FOR UPDATE
+        `;
+
+        connection.query(
+            sql,
+            [InletProduct_id],
+            (err, result) => {
+
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: "Database error",
+                        error: err
+                    });
+                }
+
+                if (!result.length) {
+
+                    return res.status(404).json({
+                        success: false,
+                        message:
+                            "Inlet Product not found"
+                    });
+                }
+
+                const product =
+                    result[0];
+
+                const oldExtra =
+                    Number(
+                        product.Extra_Quantity
+                    );
+
+                const oldGood =
+                    Number(
+                        product.Good_Quantity
+                    );
+
+                if (adjustment > oldExtra) {
+
+                    return res.status(400).json({
+                        success: false,
+                        message:
+                            `Only ${oldExtra} extra products are currently available`
+                    });
+                }
+
+                const newDamaged =
+                    Number(
+                        product.Damaged_Quantity
+                    ) + damaged;
+
+                const newFaulty =
+                    Number(
+                        product.Faulty_Quantity
+                    ) + faulty;
+
+                const newGood =
+                    oldGood -
+                    adjustment;
+
+                const newExtra =
+                    oldExtra -
+                    adjustment;
+
+                const updateSql = `
+                    UPDATE inletproducts
+                    SET
+                        Damaged_Quantity = ?,
+                        Faulty_Quantity = ?,
+                        Good_Quantity = ?,
+                        Extra_Quantity = ?
+                    WHERE InletProduct_id = ?
+                `;
+
+                connection.query(
+                    updateSql,
+                    [
+                        newDamaged,
+                        newFaulty,
+                        newGood,
+                        newExtra,
+                        InletProduct_id
+                    ],
+                    err => {
+
+                        if (err) {
+                            return res.status(500).json({
+                                success: false,
+                                message:
+                                    "Product adjustment failed",
+                                error: err
+                            });
+                        }
+
+                        // --------------------------------
+                        // REMOVE FROM AVAILABLE STOCK
+                        // --------------------------------
+
+                        removeExtraStock(
+                            product,
+                            adjustment,
+                            InletProduct_id,
+                            damaged,
+                            faulty,
+                            Remark,
+                            err => {
+
+                                if (err) {
+
+                                    return res.status(500).json({
+                                        success: false,
+                                        message:
+                                            "Product updated but stock adjustment failed",
+                                        error: err
+                                    });
+                                }
+
+                                res.json({
+
+                                    success: true,
+
+                                    message:
+                                        "Damaged/Faulty quantity adjusted successfully",
+
+                                    Damaged_Quantity:
+                                        newDamaged,
+
+                                    Faulty_Quantity:
+                                        newFaulty,
+
+                                    Good_Quantity:
+                                        newGood,
+
+                                    Extra_Quantity:
+                                        newExtra
+                                });
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    }
+);
+
+function removeExtraStock(
+    product,
+    quantity,
+    inletProductId,
+    damaged,
+    faulty,
+    remark,
+    callback
+) {
+
+    const sql = `
+        SELECT *
+        FROM product_excess_stock
+        WHERE
+            (
+                Product_id = ?
+                OR
+                (
+                    Product_id IS NULL
+                    AND Product_Name = ?
+                )
+            )
+        LIMIT 1
+    `;
+
+    connection.query(
+        sql,
+        [
+            product.Product_id,
+            product.Product_Name
+        ],
+        (err, result) => {
+
+            if (err) {
+                return callback(err);
+            }
+
+            if (!result.length) {
+
+                return callback(
+                    new Error(
+                        "Excess stock record not found"
+                    )
+                );
+            }
+
+            const stock =
+                result[0];
+
+            const available =
+                Number(
+                    stock.Available_Quantity
+                );
+
+            if (quantity > available) {
+
+                return callback(
+                    new Error(
+                        "Insufficient excess stock"
+                    )
+                );
+            }
+
+            const newQty =
+                available - quantity;
+
+            const updateSql = `
+                UPDATE product_excess_stock
+                SET Available_Quantity = ?
+                WHERE ExcessStock_id = ?
+            `;
+
+            connection.query(
+                updateSql,
+                [
+                    newQty,
+                    stock.ExcessStock_id
+                ],
+                err => {
+
+                    if (err) {
+                        return callback(err);
+                    }
+
+                    const historySql = `
+                        INSERT INTO
+                        product_excess_stock_history
+                        (
+                            Product_id,
+                            Product_Name,
+                            Transaction_Type,
+                            Quantity,
+                            Reference_InletProduct_id,
+                            Remark
+                        )
+                        VALUES
+                        (
+                            ?,
+                            ?,
+                            'DAMAGE_ADJUSTMENT',
+                            ?,
+                            ?,
+                            ?
+                        )
+                    `;
+
+                    connection.query(
+                        historySql,
+                        [
+                            product.Product_id ||
+                                null,
+
+                            product.Product_Name,
+
+                            quantity,
+
+                            inletProductId,
+
+                            `Damaged: ${damaged}, Faulty: ${faulty}. ${remark}`
+                        ],
+                        callback
+                    );
+                }
+            );
+        }
+    );
+}
 
 app.listen(3000, () => {
     console.log('Server is Running On Port 3000');

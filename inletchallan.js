@@ -1570,6 +1570,78 @@ app.post('/ChallanbyCompanyName', (req, res) => {
 });
 
 
+app.get('/InletChallanbySalesorderNumber/:Sales_Order_Number', (req, res) => {
+    const Sales_Order_Number = req.params.Sales_Order_Number;
+    // const challanquery = `select * from inletchallan where Challan_id = ?`;
+    const challanquery = `SELECT challan.*, iproduct.*
+    FROM inletchallan challan
+    JOIN inletproducts iproduct 
+    ON challan.Challan_id = iproduct.Challan_id
+    WHERE challan.Sales_Order_Number=?`;
+
+    connection.query(challanquery, [Sales_Order_Number], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: err.sqlMessage });
+        }
+        if (!rows.length) {
+            return res.json({ success: true, data: [] });
+        }
+        const result = {};
+        rows.forEach(row => {
+
+            if (!result[row.Sales_Order_Number]) {
+                result[row.Sales_Order_Number] = {
+                    Challan_id: row.Challan_id,
+                    Challan_Code: row.Challan_Code,
+                    Customer_Name: row.Customer_Name,
+                    Company_Name: row.Company_Name,
+                    Company_Address: row.Company_Address,
+                    Client_Address: row.Client_Address,
+                    GST_No: row.GST_No,
+                    Delivery_Address: row.Delivery_Address,
+                    Sub_Total: row.Sub_Total,
+                    Total_Amount: row.Total_Amount,
+                    Discount_Amount: row.Discount_Amount,
+                    CGST_amount: row.CGST_amount,
+                    SGST_amount: row.SGST_amount,
+                    Grand_Total: row.Grand_Total,
+                    Mode_of_Transport: row.Mode_of_Transport,
+                    Transporter_Name: row.Transporter_Name,
+                    Vehicle_Number: row.Vehicle_Number,
+                    Remark: row.Remark,
+                    Work_Status: row.Work_Status,
+                    Delivery_Status: row.Delivery_Status,
+                    Challan_Status: row.Challan_Status,
+                    Added_Date: row.Added_Date,
+                    Updated_Date: row.Updated_Date,
+                    items: []
+                };
+            }
+
+            result[row.Challan_id].items.push({
+                InletProduct_id: row.InletProduct_id,
+                Product_Name: row.Product_Name,
+                HSN_Code: row.HSN_Code,
+                Product_Quantity: row.Product_Quantity,
+                Rate: row.Rate,
+                SubTotal: row.SubTotal,
+            });
+
+        });
+
+        // ✅ SORT AFTER GROUPING
+        const finalData = Object.values(result).sort(
+            (a, b) => new Date(b.Added_Date) - new Date(a.Added_Date)
+        );
+
+        res.json({
+            success: true,
+            data: finalData
+        });
+
+    });
+});
+
 function box(doc, x, y, w, h) {
     doc.rect(x, y, w, h).stroke();
 }
