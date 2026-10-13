@@ -1593,6 +1593,7 @@ app.get('/InletChallanbySalesorderNumber/:Sales_Order_Number', (req, res) => {
                 result[row.Sales_Order_Number] = {
                     Challan_id: row.Challan_id,
                     Challan_Code: row.Challan_Code,
+                    Sales_Order_Number: row.Sales_Order_Number,
                     Customer_Name: row.Customer_Name,
                     Company_Name: row.Company_Name,
                     Company_Address: row.Company_Address,

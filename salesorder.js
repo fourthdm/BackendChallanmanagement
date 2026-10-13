@@ -85,10 +85,7 @@ app.post("/AddSalesOrder", (req, res) => {
         const SGST_amount =
             Total_Amount * 0.09;
 
-        const Grand_Total =
-            Total_Amount +
-            CGST_amount +
-            SGST_amount;
+        const Grand_Total = Total_Amount + CGST_amount + SGST_amount;
 
         const orderSql = `
             INSERT INTO salesorder
