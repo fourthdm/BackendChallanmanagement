@@ -225,7 +225,6 @@ app.get('/AllSalesOrder', (req, res) => {
     JOIN salesorderitems saleproduct 
     ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id
     ORDER BY saleorder.SalesOrder_id DESC`;
-
     connection.query(newquery, (err, rows) => {
         if (err) {
             return res.status(500).json({ success: false, message: err.sqlMessage });
@@ -235,7 +234,6 @@ app.get('/AllSalesOrder', (req, res) => {
         }
         const result = {};
         rows.forEach(row => {
-
             if (!result[row.SalesOrder_id]) {
                 result[row.SalesOrder_id] = {
                     SalesOrder_id: row.SalesOrder_id,
@@ -259,7 +257,6 @@ app.get('/AllSalesOrder', (req, res) => {
                     items: []
                 };
             }
-
             result[row.SalesOrder_id].items.push({
                 SalesOrderItem_id: row.SalesOrderItem_id,
                 Product_Name: row.Product_Name,
@@ -268,21 +265,16 @@ app.get('/AllSalesOrder', (req, res) => {
                 Rate: row.Rate,
                 SubTotal: row.SubTotal,
             });
-
         });
-
         // ✅ SORT AFTER GROUPING
         const finalData = Object.values(result).sort(
             (a, b) => new Date(b.Added_Date) - new Date(a.Added_Date)
         );
-
         res.json({
             success: true,
             data: finalData
         });
-
     });
-
 });
 
 app.get('/SalesOrderbyId/:SalesOrder_id', (req, res) => {

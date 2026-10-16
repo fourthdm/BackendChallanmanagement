@@ -29,9 +29,7 @@ app.post("/AddInletchallan", (req, res) => {
     // const datePart = Challan_Code.split("_")[0];
     const today = new Date();
 
-    const datePart =
-        today.getFullYear().toString() +
-        String(today.getMonth() + 1).padStart(2, "0")
+    const datePart = today.getFullYear().toString() + String(today.getMonth() + 1).padStart(2, "0")
     // const datePart =
     //     today.getFullYear().toString() +
     //     String(today.getMonth() + 1).padStart(2, "0") +
@@ -64,13 +62,14 @@ app.post("/AddInletchallan", (req, res) => {
             Total_Amount + CGST_amount + SGST_amount;
         const InletSql = `
       INSERT INTO inletchallan
-      (Challan_Code, Customer_Name, Company_Name, Company_Address, GST_No, Delivery_Address,
+      (Challan_Code, Sales_Order_Number, Customer_Name, Company_Name, Company_Address, GST_No, Delivery_Address,
         Sub_Total, Total_Amount, Discount_Amount, CGST_amount, SGST_amount, Grand_Total,
        Mode_of_Transport,Transporter_Name,  Vehicle_Number, Remark, Work_Status, Delivery_Status, Challan_Status, Added_Date,Updated_Date)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())
     `;
         const inletValues = [
             NewCode,
+            Sales_Order_Number,
             Customer_Name,
             Company_Name,
             Company_Address,
