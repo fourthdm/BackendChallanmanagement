@@ -93,18 +93,87 @@ app.post("/AddInletchallan", (req, res) => {
         connection.query(InletSql, inletValues, (err, qResult) => {
             if (err) return res.status(500).send(err);
             const Challan_id = qResult.insertId;
-            const itemSql = `INSERT INTO inletproducts
-        (Challan_id, Product_Name, HSN_Code,
-         Product_Quantity, Rate, SubTotal)
-        VALUES ?`;
-            const itemValues = items.map(i => [
+            //     const itemSql = `INSERT INTO inletproducts
+            // (Challan_id, Product_Name, HSN_Code,
+            //  Product_Quantity, Rate, SubTotal)
+            // VALUES ?`;
+            //     const itemValues = items.map(i => [
+            //         Challan_id,
+            //         i.Product_Name,
+            //         i.HSN_Code,
+            //         i.Product_Quantity,
+            //         i.Rate,
+            //         i.Rate * i.Product_Quantity
+            //     ]);
+
+            const ordered = Number(items.Product_Quantity) || 0;
+            const produced = Number(items.Produced_Quantity) || 0;
+            const damaged = Number(items.Damaged_Quantity) || 0;
+            const faulty = Number(items.Faulty_Quantity) || 0;
+            const rate = Number(items.Rate) || 0;
+
+            if (
+                !Number.isInteger(ordered) ||
+                !Number.isInteger(produced) ||
+                !Number.isInteger(damaged) ||
+                !Number.isInteger(faulty) ||
+                ordered < 0 ||
+                produced < 0 ||
+                damaged < 0 ||
+                faulty < 0
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid production quantities'
+                });
+            }
+
+            if (damaged + faulty > produced) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Damaged and faulty quantities cannot exceed produced quantity'
+                });
+            }
+
+            const good = produced - damaged - faulty;
+            const extra = Math.max(good - ordered, 0);
+
+            const productSubtotal =
+                (Number(items.Product_Quantity) || 0) * rate;
+
+            const itemSql = `
+    INSERT INTO inletproducts (
+        Challan_id,
+        Product_Name,
+        HSN_Code,
+        Product_Quantity,
+        Ordered_Quantity,
+        Produced_Quantity,
+        Damaged_Quantity,
+        Faulty_Quantity,
+        Good_Quantity,
+        Extra_Quantity,
+        Rate,
+        SubTotal
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+            const itemValues = [
                 Challan_id,
-                i.Product_Name,
-                i.HSN_Code,
-                i.Product_Quantity,
-                i.Rate,
-                i.Rate * i.Product_Quantity
-            ]);
+                items.Product_Name,
+                items.HSN_Code,
+                Number(items.Product_Quantity) || 0,
+                ordered,
+                produced,
+                damaged,
+                faulty,
+                good,
+                extra,
+                rate,
+                productSubtotal
+            ];
+
             connection.query(itemSql, [itemValues], err => {
                 if (err) return res.status(500).send(err);
                 res.json({

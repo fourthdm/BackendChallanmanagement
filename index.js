@@ -2358,7 +2358,6 @@ app.post('/SearchVendorbyStatus', (req, res) => {
 //     });
 // });
 
-
 app.post("/AddInletchallan", (req, res) => {
     const {
         Sales_Order_Number,
@@ -2508,30 +2507,97 @@ app.post("/AddInletchallan", (req, res) => {
 
                     const Challan_id = qResult.insertId;
 
-                    const itemSql = `
-                        INSERT INTO inletproducts
-                        (
-                            Challan_id,
-                            SalesOrderItem_id,
-                            Product_Name,
-                            HSN_Code,
-                            Product_Quantity,
-                            Rate,
-                            SubTotal
-                        )
-                        VALUES ?
-                    `;
+            const ordered = Number(items.Product_Quantity) || 0;
+            const produced = Number(items.Produced_Quantity) || 0;
+            const damaged = Number(items.Damaged_Quantity) || 0;
+            const faulty = Number(items.Faulty_Quantity) || 0;
+            const rate = Number(items.Rate) || 0;
 
-                    const itemValues = items.map(i => [
-                        Challan_id,
-                        i.SalesOrderItem_id || null,
-                        i.Product_Name,
-                        i.HSN_Code,
-                        Number(i.Product_Quantity),
-                        Number(i.Rate),
-                        Number(i.Product_Quantity) *
-                            Number(i.Rate)
-                    ]);
+            if (
+                !Number.isInteger(ordered) ||
+                !Number.isInteger(produced) ||
+                !Number.isInteger(damaged) ||
+                !Number.isInteger(faulty) ||
+                ordered < 0 ||
+                produced < 0 ||
+                damaged < 0 ||
+                faulty < 0
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid production quantities'
+                });
+            }
+
+            if (damaged + faulty > produced) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Damaged and faulty quantities cannot exceed produced quantity'
+                });
+            }
+
+            const good = produced - damaged - faulty;
+            const extra = Math.max(good - ordered, 0);
+
+            const productSubtotal =
+                (Number(items.Product_Quantity) || 0) * rate;
+
+            const itemSql = `
+    INSERT INTO inletproducts (
+        Challan_id,
+        Product_Name,
+        HSN_Code,
+        Product_Quantity,
+        Ordered_Quantity,
+        Produced_Quantity,
+        Damaged_Quantity,
+        Faulty_Quantity,
+        Good_Quantity,
+        Extra_Quantity,
+        Rate,
+        SubTotal
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+            const itemValues = [
+                Challan_id,
+                items.Product_Name,
+                items.HSN_Code,
+                Number(items.Product_Quantity) || 0,
+                ordered,
+                produced,
+                damaged,
+                faulty,
+                good,
+                extra,
+                rate,
+                productSubtotal
+            ];
+
+                    // const itemSql = `
+                    //     INSERT INTO inletproducts
+                    //     (
+                    //         Challan_id,
+                    //         SalesOrderItem_id,
+                    //         Product_Name,
+                    //         HSN_Code,
+                    //         Product_Quantity,
+                    //         Rate,
+                    //         SubTotal
+                    //     )
+                    //     VALUES ?
+                    // `;
+
+                    // const itemValues = items.map(i => [
+                    //     Challan_id,
+                    //     i.SalesOrderItem_id || null,
+                    //     i.Product_Name,
+                    //     i.HSN_Code,
+                    //     Number(i.Product_Quantity),
+                    //     Number(i.Rate),
+                    //     Number(i.Product_Quantity) *Number(i.Rate)
+                    // ]);
 
                     connection.query(
                         itemSql,
@@ -11666,6 +11732,193 @@ app.get(
     }
 );
 
+
+
+// Product Extra manufacutring details finds.
+
+app.put("/UpdateInletProductProduction/:InletProduct_id", (req, res) => {
+
+    const InletProduct_id =
+        req.params.InletProduct_id;
+
+    const {
+        Produced_Quantity,
+        Damaged_Quantity = 0,
+        Faulty_Quantity = 0
+    } = req.body;
+
+    const produced =
+        Number(Produced_Quantity) || 0;
+
+    const damaged =
+        Number(Damaged_Quantity) || 0;
+
+    const faulty =
+        Number(Faulty_Quantity) || 0;
+
+    if (produced < 0) {
+        return res.status(400).json({
+            success: false,
+            message: "Produced quantity cannot be negative"
+        });
+    }
+
+    if (damaged < 0 || faulty < 0) {
+        return res.status(400).json({
+            success: false,
+            message:
+                "Damaged/Faulty quantity cannot be negative"
+        });
+    }
+
+    if (damaged + faulty > produced) {
+        return res.status(400).json({
+            success: false,
+            message:
+                "Damaged + Faulty cannot be greater than Produced quantity"
+        });
+    }
+
+    const getSql = `
+        SELECT *
+        FROM inletproducts
+        WHERE InletProduct_id = ?
+    `;
+
+    connection.query(
+        getSql,
+        [InletProduct_id],
+        (err, result) => {
+
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    message: "Database error",
+                    error: err
+                });
+            }
+
+            if (!result.length) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Inlet Product not found"
+                });
+            }
+
+            const product = result[0];
+
+            const ordered =
+                Number(product.Ordered_Quantity);
+
+            const good =
+                produced -
+                damaged -
+                faulty;
+
+            const extra =
+                Math.max(
+                    good - ordered,
+                    0
+                );
+
+            const sql = `
+                UPDATE inletproducts
+                SET
+                    Produced_Quantity = ?,
+                    Damaged_Quantity = ?,
+                    Faulty_Quantity = ?,
+                    Good_Quantity = ?,
+                    Extra_Quantity = ?
+                WHERE InletProduct_id = ?
+            `;
+
+            connection.query(
+                sql,
+                [
+                    produced,
+                    damaged,
+                    faulty,
+                    good,
+                    extra,
+                    InletProduct_id
+                ],
+                (err) => {
+
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message:
+                                "Production update failed",
+                            error: err
+                        });
+                    }
+
+                    // ----------------------------------------
+                    // ADD EXTRA TO AVAILABLE STOCK
+                    // ----------------------------------------
+
+                    if (extra <= 0) {
+
+                        return res.json({
+                            success: true,
+                            message:
+                                "Production updated successfully",
+                            Ordered_Quantity: ordered,
+                            Produced_Quantity: produced,
+                            Damaged_Quantity: damaged,
+                            Faulty_Quantity: faulty,
+                            Good_Quantity: good,
+                            Extra_Quantity: extra
+                        });
+                    }
+
+                    addExtraStock(
+                        product,
+                        extra,
+                        (stockError) => {
+
+                            if (stockError) {
+
+                                return res.status(500).json({
+                                    success: false,
+                                    message:
+                                        "Production updated but excess stock update failed",
+                                    error: stockError
+                                });
+                            }
+
+                            res.json({
+
+                                success: true,
+
+                                message:
+                                    "Production and Extra Stock Updated",
+
+                                Ordered_Quantity:
+                                    ordered,
+
+                                Produced_Quantity:
+                                    produced,
+
+                                Damaged_Quantity:
+                                    damaged,
+
+                                Faulty_Quantity:
+                                    faulty,
+
+                                Good_Quantity:
+                                    good,
+
+                                Extra_Quantity:
+                                    extra
+                            });
+                        }
+                    );
+                }
+            );
+        }
+    );
+});
 
 
 app.listen(3000, () => {
