@@ -2351,7 +2351,7 @@ app.post('/SearchVendorbyStatus', (req, res) => {
 //                     message: "Inlet Challan with multiple products Added",
 //                     Challan_Code: NewCode
 //                 });
-                
+
 //             });
 
 //         });
@@ -2507,44 +2507,78 @@ app.post("/AddInletchallan", (req, res) => {
 
                     const Challan_id = qResult.insertId;
 
-            const ordered = Number(items.Product_Quantity) || 0;
-            const produced = Number(items.Produced_Quantity) || 0;
-            const damaged = Number(items.Damaged_Quantity) || 0;
-            const faulty = Number(items.Faulty_Quantity) || 0;
-            const rate = Number(items.Rate) || 0;
+                    // Validate and prepare ALL products in the challan.
+                    const productValues = [];
 
-            if (
-                !Number.isInteger(ordered) ||
-                !Number.isInteger(produced) ||
-                !Number.isInteger(damaged) ||
-                !Number.isInteger(faulty) ||
-                ordered < 0 ||
-                produced < 0 ||
-                damaged < 0 ||
-                faulty < 0
-            ) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Invalid production quantities'
-                });
-            }
+                    for (const item of items) {
+                        const ordered = Number(item.Ordered_Quantity ?? item.Product_Quantity) || 0;
+                        const productQuantity = Number(item.Product_Quantity) || 0;
+                        const produced = Number(item.Produced_Quantity) || 0;
+                        const damaged = Number(item.Damaged_Quantity) || 0;
+                        const faulty = Number(item.Faulty_Quantity) || 0;
+                        const rate = Number(item.Rate) || 0;
 
-            if (damaged + faulty > produced) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Damaged and faulty quantities cannot exceed produced quantity'
-                });
-            }
+                        // Validate quantities and rate.
+                        const quantities = [
+                            ordered,
+                            productQuantity,
+                            produced,
+                            damaged,
+                            faulty
+                        ];
 
-            const good = produced - damaged - faulty;
-            const extra = Math.max(good - ordered, 0);
+                        if (
+                            quantities.some(q => !Number.isFinite(q) || q < 0 || !Number.isInteger(q)) ||
+                            !Number.isFinite(rate) ||
+                            rate < 0
+                        ) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Invalid quantity or rate for ${item.Product_Name}`
+                            });
+                        }
 
-            const productSubtotal =
-                (Number(items.Product_Quantity) || 0) * rate;
+                        if (damaged + faulty > produced) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Damaged and faulty quantities cannot exceed produced quantity for ${item.Product_Name}`
+                            });
+                        }
 
-            const itemSql = `
+                        const good = produced - damaged - faulty;
+                        const extra = Math.max(good - ordered, 0);
+                        const productSubtotal = productQuantity * rate;
+
+                        productValues.push([
+                            Challan_id,
+                            item.SalesOrderItem_id || null,
+                            item.Product_Name,
+                            item.HSN_Code || null,
+                            productQuantity,
+                            ordered,
+                            produced,
+                            damaged,
+                            faulty,
+                            good,
+                            extra,
+                            rate,
+                            productSubtotal
+                        ]);
+                    }
+
+                    if (productValues.length === 0) {
+                        return res.status(400).json({
+                            success: false,
+                            message: "Please add at least one product."
+                        });
+                    }
+
+                    // IMPORTANT: Use VALUES ? for multiple rows.
+                    // Pass [productValues], because productValues is an array of rows.
+                    const itemSql = `
     INSERT INTO inletproducts (
         Challan_id,
+        SalesOrderItem_id,
         Product_Name,
         HSN_Code,
         Product_Quantity,
@@ -2557,110 +2591,140 @@ app.post("/AddInletchallan", (req, res) => {
         Rate,
         SubTotal
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES ?
 `;
 
-            const itemValues = [
-                Challan_id,
-                items.Product_Name,
-                items.HSN_Code,
-                Number(items.Product_Quantity) || 0,
-                ordered,
-                produced,
-                damaged,
-                faulty,
-                good,
-                extra,
-                rate,
-                productSubtotal
-            ];
+                    connection.query(itemSql, [productValues], (err) => {
+                        if (err) {
+                            console.error("Inlet product insertion failed:", err);
 
-                    // const itemSql = `
-                    //     INSERT INTO inletproducts
-                    //     (
-                    //         Challan_id,
-                    //         SalesOrderItem_id,
-                    //         Product_Name,
-                    //         HSN_Code,
-                    //         Product_Quantity,
-                    //         Rate,
-                    //         SubTotal
-                    //     )
-                    //     VALUES ?
-                    // `;
+                            return res.status(500).json({
+                                success: false,
+                                message: "Challan created, but product insertion failed",
+                                error: err.message
+                            });
+                        }
 
-                    // const itemValues = items.map(i => [
-                    //     Challan_id,
-                    //     i.SalesOrderItem_id || null,
-                    //     i.Product_Name,
-                    //     i.HSN_Code,
-                    //     Number(i.Product_Quantity),
-                    //     Number(i.Rate),
-                    //     Number(i.Product_Quantity) *Number(i.Rate)
-                    // ]);
+                        function updateExtraStocks(index) {
+                            if (index >= items.length) {
+                                // All products have been checked and their extra
+                                // stock has been updated.
 
-                    connection.query(
-                        itemSql,
-                        [itemValues],
-                        err => {
-                            if (err) {
-                                return res.status(500).json({
-                                    success: false,
-                                    message:
-                                        "Challan created, but product insertion failed",
-                                    error: err.message
-                                });
-                            }
-
-                            // Update Sales Order status only when
-                            // this challan is linked to a Sales Order.
-                            if (!Sales_Order_Number) {
-                                return res.json({
-                                    success: true,
-                                    message:
-                                        "Inlet Challan with multiple products Added",
-                                    Challan_Code: NewCode,
-                                    Challan_id
-                                });
-                            }
-
-                            const updateOrderSql = `
-                                UPDATE salesorder
-                                SET Sales_Order_Status = 'In Production'
-                                WHERE Sales_Order_Number = ?
-                                  AND Sales_Order_Status = 'Confirm'
-                            `;
-
-                            connection.query(
-                                updateOrderSql,
-                                [Sales_Order_Number],
-                                (err, updateResult) => {
-                                    if (err) {
-                                        return res.status(500).json({
-                                            success: false,
-                                            message:
-                                                "Challan created, but Sales Order status update failed",
-                                            Challan_Code: NewCode,
-                                            Challan_id,
-                                            error: err.message
-                                        });
-                                    }
-
-                                    res.json({
+                                if (!Sales_Order_Number) {
+                                    return res.json({
                                         success: true,
-                                        message:
-                                            "Inlet Challan created successfully. Sales Order status updated to In Production.",
+                                        message: "Inlet Challan and extra stock updated successfully.",
                                         Challan_Code: NewCode,
-                                        Challan_id,
-                                        Sales_Order_Status:
-                                            updateResult.affectedRows > 0
-                                                ? "In Production"
-                                                : "Unchanged"
+                                        Challan_id
                                     });
                                 }
-                            );
+
+                                const updateOrderSql = `
+            UPDATE salesorder
+            SET Sales_Order_Status = 'In Production'
+            WHERE Sales_Order_Number = ?
+              AND Sales_Order_Status = 'Confirm'
+        `;
+
+                                return connection.query(
+                                    updateOrderSql,
+                                    [Sales_Order_Number],
+                                    (updateErr, updateResult) => {
+                                        if (updateErr) {
+                                            return res.status(500).json({
+                                                success: false,
+                                                message: "Challan created, but Sales Order update failed.",
+                                                error: updateErr.message
+                                            });
+                                        }
+
+                                        return res.json({
+                                            success: true,
+                                            message: "Inlet Challan and extra stock updated successfully.",
+                                            Challan_Code: NewCode,
+                                            Challan_id,
+                                            Sales_Order_Status:
+                                                updateResult.affectedRows > 0
+                                                    ? "In Production"
+                                                    : "Unchanged"
+                                        });
+                                    }
+                                );
+                            }
+
+                            const product = items[index];
+                            const extra = Number(product.Extra_Quantity) || 0;
+
+                            // Nothing extra to add for this product.
+                            if (extra <= 0) {
+                                return updateExtraStocks(index + 1);
+                            }
+
+                            addExtraStock(product, extra, (stockErr) => {
+                                if (stockErr) {
+                                    console.error("Extra stock update failed:", stockErr);
+
+                                    return res.status(500).json({
+                                        success: false,
+                                        message: "Challan products were added, but extra stock could not be updated.",
+                                        Challan_Code: NewCode,
+                                        Challan_id,
+                                        error: stockErr.message
+                                    });
+                                }
+
+                                updateExtraStocks(index + 1);
+                            });
                         }
-                    );
+
+                        updateExtraStocks(0);
+
+                        // Update the sales order only after every product is inserted.
+                        if (!Sales_Order_Number) {
+                            return res.json({
+                                success: true,
+                                message: "Inlet Challan with multiple products added successfully.",
+                                Challan_Code: NewCode,
+                                Challan_id
+                            });
+                        }
+
+                        const updateOrderSql = `
+        UPDATE salesorder
+        SET Sales_Order_Status = 'In Production'
+        WHERE Sales_Order_Number = ?
+          AND Sales_Order_Status = 'Confirm'
+    `;
+
+                        connection.query(
+                            updateOrderSql,
+                            [Sales_Order_Number],
+                            (updateErr, updateResult) => {
+                                if (updateErr) {
+                                    console.error("Sales order update failed:", updateErr);
+
+                                    return res.status(500).json({
+                                        success: false,
+                                        message: "Challan and products created, but Sales Order status update failed.",
+                                        Challan_Code: NewCode,
+                                        Challan_id,
+                                        error: updateErr.message
+                                    });
+                                }
+
+                                return res.json({
+                                    success: true,
+                                    message: "Inlet Challan created successfully.",
+                                    Challan_Code: NewCode,
+                                    Challan_id,
+                                    Sales_Order_Status:
+                                        updateResult.affectedRows > 0
+                                            ? "In Production"
+                                            : "Unchanged"
+                                });
+                            }
+                        );
+                    });
                 }
             );
         }
@@ -3570,6 +3634,12 @@ app.get('/ChallanbyChallanid/:Challan_id', (req, res) => {
                 Product_Name: row.Product_Name,
                 HSN_Code: row.HSN_Code,
                 Product_Quantity: row.Product_Quantity,
+                Ordered_Quantity: row.Ordered_Quantity,
+                Produced_Quantity: row.Produced_Quantity,
+                Damaged_Quantity: row.Damaged_Quantity,
+                Faulty_Quantity: row.Faulty_Quantity,
+                Good_Quantity: row.Good_Quantity,
+                Extra_Quantity: row.Extra_Quantity,
                 Rate: row.Rate,
                 SubTotal: row.SubTotal,
             });
@@ -9038,7 +9108,6 @@ app.post("/ConfirmSalesOrder/:SalesOrder_id", (req, res) => {
                         NewCode =
                             `CH_${datePart}_${next}`;
                     }
-
                     // -----------------------------------------
                     // INSERT CHALLAN
                     // -----------------------------------------
@@ -10538,98 +10607,153 @@ app.post('/CreateInletChallanFromSalesOrder/:SalesOrder_id', (req, res) => {
     });
 });
 
-function addExtraStock(
-    product,
-    extra,
-    callback
-) {
+// function addExtraStock(product, extra, callback) {
+//     extra = Number(extra) || 0;
+
+//     if (extra <= 0) {
+//         return callback(null);
+//     }
+
+//     const productId =
+//         product.Product_id ??
+//         product.product_id ??
+//         null;
+
+//     if (!product.Product_Name) {
+//         return callback(new Error("Product_Name is missing"));
+//     }
+
+//     // Do not silently insert a missing Product_id.
+//     if (productId == null) {
+//         return callback(
+//             new Error(
+//                 `Product_id missing for ${product.Product_Name}. Check AllSalesOrders API.`
+//             )
+//         );
+//     }
+
+//     const findSql = `
+//         SELECT ExcessStock_id
+//         FROM product_excess_stock
+//         WHERE Product_id = ?
+//         LIMIT 1
+//     `;
+
+//     connection.query(findSql, [productId], (err, result) => {
+//         if (err) return callback(err);
+
+//         if (result.length > 0) {
+//             const updateSql = `
+//                 UPDATE product_excess_stock
+//                 SET Available_Quantity = Available_Quantity + ?,
+//                     Updated_Date = NOW()
+//                 WHERE ExcessStock_id = ?
+//             `;
+
+//             return connection.query(
+//                 updateSql,
+//                 [extra, result[0].ExcessStock_id],
+//                 callback
+//             );
+//         }
+
+//         const insertSql = `
+//             INSERT INTO product_excess_stock
+//             (
+//                 Product_id,
+//                 Product_Name,
+//                 HSN_Code,
+//                 Available_Quantity,
+//                 Updated_Date
+//             )
+//             VALUES (?, ?, ?, ?, NOW())
+//         `;
+
+//         connection.query(
+//             insertSql,
+//             [
+//                 productId,
+//                 product.Product_Name,
+//                 product.HSN_Code || null,
+//                 extra
+//             ],
+//             callback
+//         );
+//     });
+// }
+
+function addExtraStock(product, extra, callback) {
+    extra = Number(extra) || 0;
+
+    // No extra stock to add.
+    if (extra <= 0) {
+        return callback(null);
+    }
+
     const findSql = `
-        SELECT *
+        SELECT ExcessStock_id, Available_Quantity
         FROM product_excess_stock
-        WHERE
-            (
-                Product_id = ?
-                OR
-                (
-                    Product_id IS NULL
-                    AND Product_Name = ?
-                )
+        WHERE (
+            Product_id = ?
+            OR (
+                Product_id IS NULL
+                AND Product_Name = ?
             )
+        )
         LIMIT 1
     `;
+
     connection.query(
         findSql,
         [
-            product.Product_id,
+            product.Product_id || null,
             product.Product_Name
         ],
         (err, result) => {
-            if (err) {
-                return callback(err);
-            }
-            if (result.length) {
-                const stock =
-                    result[0];
-                const newQty =
-                    Number(
-                        stock.Available_Quantity
-                    ) + extra;
+            if (err) return callback(err);
+
+            if (result.length > 0) {
+                // Product exists: increase available extra stock.
                 const updateSql = `
                     UPDATE product_excess_stock
-                    SET Available_Quantity = ?
+                    SET Available_Quantity = Available_Quantity + ?,
+                        Updated_Date = NOW()
                     WHERE ExcessStock_id = ?
                 `;
-                connection.query(
+
+                return connection.query(
                     updateSql,
-                    [
-                        newQty,
-                        stock.ExcessStock_id
-                    ],
-                    err => {
-                        if (err) {
-                            return callback(err);
-                        }
-                        addHistory(
-                            product,
-                            extra,
-                            callback
-                        );
-                    });
-            } else {
-                const insertSql = `
-                    INSERT INTO product_excess_stock
-                    (
-                        Product_id,
-                        Product_Name,
-                        HSN_Code,
-                        Available_Quantity
-                    )
-                    VALUES (?, ?, ?, ?)
-                `;
-                connection.query(
-                    insertSql,
-                    [
-                        product.Product_id ||
-                        null,
-                        product.Product_Name,
-                        product.HSN_Code,
-                        extra
-                    ],
-                    err => {
-                        if (err) {
-                            return callback(err);
-                        }
-                        addHistory(
-                            product,
-                            extra,
-                            callback
-                        );
-                    }
+                    [extra, result[0].ExcessStock_id],
+                    callback
                 );
             }
+
+            // Product does not exist: create a stock record.
+            const insertSql = `
+                INSERT INTO product_excess_stock (
+                    Product_id,
+                    Product_Name,
+                    HSN_Code,
+                    Available_Quantity,
+                    Updated_Date
+                )
+                VALUES (?, ?, ?, ?, NOW())
+            `;
+
+            connection.query(
+                insertSql,
+                [
+                    product.Product_id || null,
+                    product.Product_Name,
+                    product.HSN_Code || null,
+                    extra
+                ],
+                callback
+            );
         }
     );
 }
+
 
 function addHistory(
     product,
@@ -10960,7 +11084,6 @@ app.get('/InletChallanbySalesorderNumber/:Sales_Order_Number', (req, res) => {
 
                         Added_Date: row.Added_Date,
                         Updated_Date: row.Updated_Date,
-
                         items: []
                     };
                 }
@@ -10997,8 +11120,7 @@ app.get('/InletChallanbySalesorderNumber/:Sales_Order_Number', (req, res) => {
 
 //Vendor Receipts API 
 
-app.post(
-    "/CreateVendorChallanReceipt/:VendorChallan_id",
+app.post("/CreateVendorChallanReceipt/:VendorChallan_id",
     async (req, res) => {
         const challanId = Number(req.params.VendorChallan_id);
 

@@ -144,6 +144,7 @@ app.post("/AddInletchallan", (req, res) => {
             const itemSql = `
     INSERT INTO inletproducts (
         Challan_id,
+        SalesOrderItem_id,,
         Product_Name,
         HSN_Code,
         Product_Quantity,
@@ -156,11 +157,12 @@ app.post("/AddInletchallan", (req, res) => {
         Rate,
         SubTotal
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
             const itemValues = [
                 Challan_id,
+                items.SalesOrderItem_id,
                 items.Product_Name,
                 items.HSN_Code,
                 Number(items.Product_Quantity) || 0,
@@ -1947,3 +1949,392 @@ app.get('/PrintInletchallan/:Challan_id', (req, res) => {
     });
 });
 // Inlet challan API ends
+
+
+app.post("/AddInletchallan", async (req, res) => {
+    let connection;
+
+    try {
+        const {
+            Sales_Order_Number,
+            Customer_Name,
+            Company_Name,
+            Company_Address,
+            GST_No,
+            Delivery_Address,
+            Mode_of_Transport,
+            Transporter_Name,
+            Vehicle_Number,
+            Remark,
+            Work_Status,
+            Delivery_Status,
+            Challan_Status,
+            Discount_Amount = 0,
+            items
+        } = req.body;
+
+        // ---------------- VALIDATION ----------------
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Please add at least one product."
+            });
+        }
+
+        const discount = Number(Discount_Amount);
+
+        if (!Number.isFinite(discount) || discount < 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid discount amount."
+            });
+        }
+
+        for (const item of items) {
+            if (
+                item.Product_id == null ||
+                !Number.isInteger(Number(item.Product_id)) ||
+                Number(item.Product_id) <= 0
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        `Product_id missing for ${item.Product_Name}. ` +
+                        "Fix the Sales Order products API before creating the challan."
+                });
+            }
+
+            if (!item.Product_Name) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Product name is required."
+                });
+            }
+
+            const ordered = Number(
+                item.Ordered_Quantity ?? item.Product_Quantity
+            );
+            const quantity = Number(item.Product_Quantity);
+            const produced = Number(item.Produced_Quantity);
+            const damaged = Number(item.Damaged_Quantity || 0);
+            const faulty = Number(item.Faulty_Quantity || 0);
+            const rate = Number(item.Rate || 0);
+
+            const values = [
+                ordered,
+                quantity,
+                produced,
+                damaged,
+                faulty
+            ];
+
+            if (
+                values.some(
+                    value =>
+                        !Number.isInteger(value) ||
+                        !Number.isFinite(value) ||
+                        value < 0
+                ) ||
+                !Number.isFinite(rate) ||
+                rate < 0
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid quantity or rate for ${item.Product_Name}.`
+                });
+            }
+
+            if (damaged + faulty > produced) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        `Damaged and faulty quantities cannot exceed ` +
+                        `produced quantity for ${item.Product_Name}.`
+                });
+            }
+        }
+
+        // ---------------- DATABASE TRANSACTION ----------------
+
+        connection = await new Promise((resolve, reject) => {
+            connection.getConnection((err, conn) => {
+                if (err) return reject(err);
+                resolve(conn);
+            });
+        });
+
+        const query = (sql, params = []) =>
+            new Promise((resolve, reject) => {
+                connection.query(sql, params, (err, result) => {
+                    if (err) return reject(err);
+                    resolve(result);
+                });
+            });
+
+        await new Promise((resolve, reject) => {
+            connection.beginTransaction(err =>
+                err ? reject(err) : resolve()
+            );
+        });
+
+        try {
+            // Generate the challan number.
+            const now = new Date();
+            const datePart =
+                now.getFullYear().toString() +
+                String(now.getMonth() + 1).padStart(2, "0");
+
+            const codeRows = await query(
+                `SELECT Challan_Code
+                 FROM inletchallan
+                 WHERE Challan_Code LIKE ?
+                 ORDER BY Challan_id DESC
+                 LIMIT 1
+                 FOR UPDATE`,
+                [`CH_${datePart}_%`]
+            );
+
+            let nextNumber = 1;
+
+            if (codeRows.length) {
+                nextNumber =
+                    parseInt(codeRows[0].Challan_Code.split("_")[2], 10) + 1;
+            }
+
+            const Challan_Code =
+                `CH_${datePart}_${String(nextNumber).padStart(2, "0")}`;
+
+            // Calculate header totals.
+            let Sub_Total = 0;
+
+            const preparedItems = items.map(item => {
+                const ordered = Number(
+                    item.Ordered_Quantity ?? item.Product_Quantity
+                );
+                const quantity = Number(item.Product_Quantity);
+                const produced = Number(item.Produced_Quantity);
+                const damaged = Number(item.Damaged_Quantity || 0);
+                const faulty = Number(item.Faulty_Quantity || 0);
+                const good = produced - damaged - faulty;
+                const extra = Math.max(good - ordered, 0);
+                const rate = Number(item.Rate || 0);
+                const subtotal = quantity * rate;
+
+                Sub_Total += subtotal;
+
+                return {
+                    ...item,
+                    Product_id: Number(item.Product_id),
+                    Ordered_Quantity: ordered,
+                    Product_Quantity: quantity,
+                    Produced_Quantity: produced,
+                    Damaged_Quantity: damaged,
+                    Faulty_Quantity: faulty,
+                    Good_Quantity: good,
+                    Extra_Quantity: extra,
+                    Rate: rate,
+                    SubTotal: subtotal
+                };
+            });
+
+            const Total_Amount = Sub_Total - discount;
+            const CGST_amount = Total_Amount * 0.09;
+            const SGST_amount = Total_Amount * 0.09;
+            const Grand_Total =
+                Total_Amount + CGST_amount + SGST_amount;
+
+            // Insert challan header.
+            const headerResult = await query(
+                `INSERT INTO inletchallan (
+                    Challan_Code,
+                    Sales_Order_Number,
+                    Customer_Name,
+                    Company_Name,
+                    Company_Address,
+                    GST_No,
+                    Delivery_Address,
+                    Sub_Total,
+                    Total_Amount,
+                    Discount_Amount,
+                    CGST_amount,
+                    SGST_amount,
+                    Grand_Total,
+                    Mode_of_Transport,
+                    Transporter_Name,
+                    Vehicle_Number,
+                    Remark,
+                    Work_Status,
+                    Delivery_Status,
+                    Challan_Status,
+                    Added_Date,
+                    Updated_Date
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()
+                )`,
+                [
+                    Challan_Code,
+                    Sales_Order_Number || null,
+                    Customer_Name,
+                    Company_Name,
+                    Company_Address,
+                    GST_No,
+                    Delivery_Address,
+                    Sub_Total,
+                    Total_Amount,
+                    discount,
+                    CGST_amount,
+                    SGST_amount,
+                    Grand_Total,
+                    Mode_of_Transport,
+                    Transporter_Name,
+                    Vehicle_Number,
+                    Remark,
+                    Work_Status,
+                    Delivery_Status,
+                    Challan_Status
+                ]
+            );
+
+            const Challan_id = headerResult.insertId;
+
+            // Insert every product row.
+            const productValues = preparedItems.map(item => [
+                Challan_id,
+                item.Product_id,
+                item.SalesOrderItem_id || null,
+                item.Product_Name,
+                item.HSN_Code || null,
+                item.Product_Quantity,
+                item.Ordered_Quantity,
+                item.Produced_Quantity,
+                item.Damaged_Quantity,
+                item.Faulty_Quantity,
+                item.Good_Quantity,
+                item.Extra_Quantity,
+                item.Rate,
+                item.SubTotal
+            ]);
+
+            await query(
+                `INSERT INTO inletproducts (
+                    Challan_id,
+                    Product_id,
+                    SalesOrderItem_id,
+                    Product_Name,
+                    HSN_Code,
+                    Product_Quantity,
+                    Ordered_Quantity,
+                    Produced_Quantity,
+                    Damaged_Quantity,
+                    Faulty_Quantity,
+                    Good_Quantity,
+                    Extra_Quantity,
+                    Rate,
+                    SubTotal
+                ) VALUES ?`,
+                [productValues]
+            );
+
+            // Update extra stock by Product_id.
+            for (const item of preparedItems) {
+                if (item.Extra_Quantity <= 0) continue;
+
+                const stockRows = await query(
+                    `SELECT ExcessStock_id
+                     FROM product_excess_stock
+                     WHERE Product_id = ?
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [item.Product_id]
+                );
+
+                if (stockRows.length) {
+                    await query(
+                        `UPDATE product_excess_stock
+                         SET Available_Quantity = Available_Quantity + ?,
+                             Product_Name = ?,
+                             HSN_Code = ?,
+                             Updated_Date = NOW()
+                         WHERE ExcessStock_id = ?`,
+                        [
+                            item.Extra_Quantity,
+                            item.Product_Name,
+                            item.HSN_Code || null,
+                            stockRows[0].ExcessStock_id
+                        ]
+                    );
+                } else {
+                    await query(
+                        `INSERT INTO product_excess_stock (
+                            Product_id,
+                            Product_Name,
+                            HSN_Code,
+                            Available_Quantity,
+                            Updated_Date
+                        ) VALUES (?, ?, ?, ?, NOW())`,
+                        [
+                            item.Product_id,
+                            item.Product_Name,
+                            item.HSN_Code || null,
+                            item.Extra_Quantity
+                        ]
+                    );
+                }
+            }
+
+            // Update Sales Order status once, after products and stock.
+            let Sales_Order_Status = "Not Applicable";
+
+            if (Sales_Order_Number) {
+                const orderResult = await query(
+                    `UPDATE salesorder
+                     SET Sales_Order_Status = 'In Production'
+                     WHERE Sales_Order_Number = ?
+                       AND Sales_Order_Status = 'Confirm'`,
+                    [Sales_Order_Number]
+                );
+
+                Sales_Order_Status =
+                    orderResult.affectedRows > 0
+                        ? "In Production"
+                        : "Unchanged";
+            }
+
+            await new Promise((resolve, reject) => {
+                connection.commit(err =>
+                    err ? reject(err) : resolve()
+                );
+            });
+
+            return res.status(201).json({
+                success: true,
+                message: "Inlet Challan and extra stock saved successfully.",
+                Challan_Code,
+                Challan_id,
+                Sales_Order_Status
+            });
+
+        } catch (err) {
+            await new Promise(resolve => {
+                connection.rollback(() => resolve());
+            });
+
+            throw err;
+        }
+
+    } catch (err) {
+        console.error("AddInletchallan API error:", err);
+
+        if (!res.headersSent) {
+            return res.status(500).json({
+                success: false,
+                message: "Failed to create Inlet Challan.",
+                error: err.message
+            });
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+});
