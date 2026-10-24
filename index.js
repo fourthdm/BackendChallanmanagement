@@ -2593,7 +2593,6 @@ app.post("/AddInletchallan", (req, res) => {
     )
     VALUES ?
 `;
-
                     connection.query(itemSql, [productValues], (err) => {
                         if (err) {
                             console.error("Inlet product insertion failed:", err);
