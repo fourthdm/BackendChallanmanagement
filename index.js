@@ -2492,7 +2492,40 @@ app.post("/AddInletchallan", (req, res) => {
                 Delivery_Status,
                 Challan_Status
             ];
+            // Check status BEFORE inserting the Inlet Challan.
+            const checkOrderSql = `
+    SELECT Sales_Order_Status
+    FROM salesorder
+    WHERE Sales_Order_Number = ?
+    LIMIT 1
+`;
 
+            connection.query(
+                checkOrderSql,
+                [Sales_Order_Number],
+                (statusErr, orders) => {
+                    if (statusErr) {
+                        return res.status(500).json({
+                            success: false,
+                            message: 'Failed to check Sales Order status.'
+                        });
+                    }
+
+                    if (!orders.length) {
+                        return res.status(404).json({
+                            success: false,
+                            message: 'Sales Order not found.'
+                        });
+                    }
+
+                    if (orders[0].Sales_Order_Status !== 'Confirm') {
+                        return res.status(400).json({
+                            success: false,
+                            message:
+                                'Please confirm the Sales Order before creating an Inlet Challan.'
+                        });
+                    }
+                })
             connection.query(
                 InletSql,
                 inletValues,
@@ -2716,10 +2749,9 @@ app.post("/AddInletchallan", (req, res) => {
                                     message: "Inlet Challan created successfully.",
                                     Challan_Code: NewCode,
                                     Challan_id,
-                                    Sales_Order_Status:
-                                        updateResult.affectedRows > 0
-                                            ? "In Production"
-                                            : "Unchanged"
+                                    Sales_Order_Status: updateResult.affectedRows > 0
+                                        ? "In Production"
+                                        : "Unchanged"
                                 });
                             }
                         );
@@ -10682,76 +10714,139 @@ app.post('/CreateInletChallanFromSalesOrder/:SalesOrder_id', (req, res) => {
 // }
 
 function addExtraStock(product, extra, callback) {
-    extra = Number(extra) || 0;
+    const productName = String(
+        product.Product_Name || ''
+    ).trim();
 
-    // No extra stock to add.
-    if (extra <= 0) {
+    const extraQty = Number(extra) || 0;
+
+    if (!productName) {
+        return callback(
+            new Error('Product_Name is required for extra stock.')
+        );
+    }
+
+    if (extraQty <= 0) {
         return callback(null);
     }
 
     const findSql = `
-        SELECT ExcessStock_id, Available_Quantity
+        SELECT *
         FROM product_excess_stock
-        WHERE (
-            Product_id = ?
-            OR (
-                Product_id IS NULL
-                AND Product_Name = ?
-            )
-        )
+        WHERE LOWER(TRIM(Product_Name)) = LOWER(TRIM(?))
         LIMIT 1
     `;
 
-    connection.query(
-        findSql,
-        [
-            product.Product_id || null,
-            product.Product_Name
-        ],
-        (err, result) => {
-            if (err) return callback(err);
+    connection.query(findSql, [productName], (err, rows) => {
+        if (err) {
+            return callback(err);
+        }
 
-            if (result.length > 0) {
-                // Product exists: increase available extra stock.
-                const updateSql = `
-                    UPDATE product_excess_stock
-                    SET Available_Quantity = Available_Quantity + ?,
-                        Updated_Date = NOW()
-                    WHERE ExcessStock_id = ?
-                `;
-
-                return connection.query(
-                    updateSql,
-                    [extra, result[0].ExcessStock_id],
-                    callback
-                );
-            }
-
-            // Product does not exist: create a stock record.
-            const insertSql = `
-                INSERT INTO product_excess_stock (
-                    Product_id,
-                    Product_Name,
-                    HSN_Code,
-                    Available_Quantity,
-                    Updated_Date
-                )
-                VALUES (?, ?, ?, ?, NOW())
+        if (rows.length > 0) {
+            const updateSql = `
+                UPDATE product_excess_stock
+                SET Available_Quantity =
+                    COALESCE(Available_Quantity, 0) + ?
+                WHERE LOWER(TRIM(Product_Name)) = LOWER(TRIM(?))
             `;
 
-            connection.query(
-                insertSql,
-                [
-                    product.Product_id || null,
-                    product.Product_Name,
-                    product.HSN_Code || null,
-                    extra
-                ],
+            return connection.query(
+                updateSql,
+                [extraQty, productName],
                 callback
             );
         }
-    );
+
+        const insertSql = `
+            INSERT INTO product_excess_stock
+            (
+                Product_id,
+                Product_Name,
+                Available_Quantity
+            )
+            VALUES (NULL, ?, ?)
+        `;
+
+        connection.query(
+            insertSql,
+            [productName, extraQty],
+            callback
+        );
+    });
 }
+
+
+// function addExtraStock(product, extra, callback) {
+//     extra = Number(extra) || 0;
+
+//     // No extra stock to add.
+//     if (extra <= 0) {
+//         return callback(null);
+//     }
+
+//     const findSql = `
+//         SELECT ExcessStock_id, Available_Quantity
+//         FROM product_excess_stock
+//         WHERE (
+//             Product_id = ?
+//             OR (
+//                 Product_id IS NULL
+//                 AND Product_Name = ?
+//             )
+//         )
+//         LIMIT 1
+//     `;
+
+//     connection.query(
+//         findSql,
+//         [
+//             product.Product_id || null,
+//             product.Product_Name
+//         ],
+//         (err, result) => {
+//             if (err) return callback(err);
+
+//             if (result.length > 0) {
+//                 // Product exists: increase available extra stock.
+//                 const updateSql = `
+//                     UPDATE product_excess_stock
+//                     SET Available_Quantity = Available_Quantity + ?,
+//                         Updated_Date = NOW()
+//                     WHERE ExcessStock_id = ?
+//                 `;
+
+//                 return connection.query(
+//                     updateSql,
+//                     [extra, result[0].ExcessStock_id],
+//                     callback
+//                 );
+//             }
+
+//             // Product does not exist: create a stock record.
+//             const insertSql = `
+//                 INSERT INTO product_excess_stock (
+//                     Product_id,
+//                     Product_Name,
+//                     HSN_Code,
+//                     Available_Quantity,
+//                     Updated_Date
+//                 )
+//                 VALUES (?, ?, ?, ?, NOW())
+//             `;
+
+//             connection.query(
+//                 insertSql,
+//                 [
+//                     product.Product_id || null,
+//                     product.Product_Name,
+//                     product.HSN_Code || null,
+//                     extra
+//                 ],
+//                 callback
+//             );
+//         }
+//     );
+// }
 
 
 function addHistory(
