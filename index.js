@@ -4068,6 +4068,13 @@ app.get('/AllChallan', (req, res) => {
                 Product_Name: row.Product_Name,
                 HSN_Code: row.HSN_Code,
                 Product_Quantity: row.Product_Quantity,
+                Ordered_Quantity: row.Ordered_Quantity,
+                Produced_Quantity: row.Produced_Quantity,
+                Damaged_Quantity: row.Damaged_Quantity,
+                Faulty_Quantity: row.Faulty_Quantity,
+                Good_Quantity: row.Good_Quantity,
+                Extra_Quantity: row.Extra_Quantity,
+                ExtraStock_Posted_Quantity: row.ExtraStock_Posted_Quantity,
                 Rate: row.Rate,
                 SubTotal: row.SubTotal,
             });
@@ -8859,11 +8866,6 @@ app.get('/GetVendorDeletionHistoryById/:VendorDeletion_id',
     }
 );
 
-
-
-
-
-
 app.post("/AddSalesOrder", (req, res) => {
     const {
         Customer_Name,
@@ -9038,7 +9040,6 @@ app.post("/AddSalesOrder", (req, res) => {
     });
 });
 
-
 app.get('/AllSalesOrder', (req, res) => {
     const newquery = `SELECT saleorder.*, saleproduct.*
     FROM salesorder saleorder
@@ -9051,7 +9052,7 @@ app.get('/AllSalesOrder', (req, res) => {
         }
         if (!rows.length) {
             return res.json({ success: true, data: [] });
-        }
+        }   
         const result = {};
         rows.forEach(row => {
             if (!result[row.SalesOrder_id]) {
@@ -12729,6 +12730,56 @@ app.put("/UpdateInletProductProduction/:InletProduct_id", (req, res) => {
 });
 
 
+app.get("/GetHSNByProductName", (req, res) => {
+    const Product_Name = String(
+        req.query.Product_Name || ""
+    ).trim();
+
+    if (!Product_Name) {
+        return res.status(400).json({
+            success: false,
+            message: "Product name is required"
+        });
+    }
+
+    const sql = `
+        SELECT soi.HSN_Code
+        FROM salesorderitems AS soi
+        INNER JOIN salesorder AS so
+            ON so.SalesOrder_id = soi.SalesOrder_id
+        WHERE LOWER(TRIM(soi.Product_Name)) =
+              LOWER(TRIM(?))
+          AND soi.HSN_Code IS NOT NULL
+          AND TRIM(soi.HSN_Code) <> ''
+        ORDER BY so.SalesOrder_id DESC
+        LIMIT 1
+    `;
+
+    connection.query(sql, [Product_Name], (err, result) => {
+        if (err) {
+            console.error("HSN fetch error:", err);
+
+            return res.status(500).json({
+                success: false,
+                message: "Error fetching HSN code"
+            });
+        }
+
+        if (result.length === 0) {
+            return res.status(200).json({
+                success: true,
+                found: false,
+                HSN_Code: ""
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            found: true,
+            HSN_Code: result[0].HSN_Code
+        });
+    });
+});
 app.listen(3000, () => {
     console.log('Server is Running On Port 3000');
 });
