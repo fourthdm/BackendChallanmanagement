@@ -9641,74 +9641,74 @@ app.get('/GetVendorDeletionHistory', (req, res) => {
 });
 
 app.get('/GetVendorDeletionHistoryById/:VendorDeletion_id', (req, res) => {
-        const token = req.headers['x-access-token'];
-        const VendorDeletion_id = req.params.VendorDeletion_id;
-        if (!token) {
+    const token = req.headers['x-access-token'];
+    const VendorDeletion_id = req.params.VendorDeletion_id;
+    if (!token) {
+
+        return res.status(401).json({
+            success: false,
+            message: 'Unauthorized'
+        });
+    }
+    jwt.verify(token, secrect, (err, decoded) => {
+        if (err) {
 
             return res.status(401).json({
                 success: false,
                 message: 'Unauthorized'
             });
         }
-        jwt.verify(token, secrect, (err, decoded) => {
-            if (err) {
+        if (decoded.Role !== 'Admin') {
 
-                return res.status(401).json({
-                    success: false,
-                    message: 'Unauthorized'
-                });
-            }
-            if (decoded.Role !== 'Admin') {
-
-                return res.status(403).json({
-                    success: false,
-                    message:
-                        'Only Admin can view deletion history'
-                });
-            }
-            connection.query(
-                `
+            return res.status(403).json({
+                success: false,
+                message:
+                    'Only Admin can view deletion history'
+            });
+        }
+        connection.query(
+            `
                 SELECT *
                 FROM vendor_deletion_history
                 WHERE VendorDeletion_id = ?
                 `,
 
-                [VendorDeletion_id],
-                (err, result) => {
-                    if (err) {
-                        return res.status(500).json({
-                            success: false,
-                            message: err.sqlMessage
-                        });
-                    }
-
-                    if (!result.length) {
-                        return res.status(404).json({
-                            success: false,
-                            message: 'Deletion history not found'
-                        });
-                    }
-                    const history = result[0];
-                    try {
-                        history.Vendor_Data =
-                            history.Vendor_Data
-                                ? JSON.parse(
-                                    history.Vendor_Data
-                                )
-                                : null;
-
-                    } catch (e) {
-                        history.Vendor_Data = null;
-                    }
-
-                    return res.json({
-                        success: true,
-                        data: history
+            [VendorDeletion_id],
+            (err, result) => {
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: err.sqlMessage
                     });
+                }
 
+                if (!result.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Deletion history not found'
+                    });
+                }
+                const history = result[0];
+                try {
+                    history.Vendor_Data =
+                        history.Vendor_Data
+                            ? JSON.parse(
+                                history.Vendor_Data
+                            )
+                            : null;
+
+                } catch (e) {
+                    history.Vendor_Data = null;
+                }
+
+                return res.json({
+                    success: true,
+                    data: history
                 });
-        });
-    }
+
+            });
+    });
+}
 );
 
 app.post("/AddSalesOrder", (req, res) => {
@@ -10076,6 +10076,147 @@ app.get('/AllSalesOrder', (req, res) => {
 //     });
 // });
 
+app.get('/HSNCodes', (req, res) => {
+    // const sqll = `select * from salesorderitems`;
+    const sqll = `SELECT DISTINCT HSN_Code, Product_Name FROM salesorderitems WHERE HSN_Code IS NOT NULL AND HSN_Code != '' ORDER BY HSN_Code;`;
+    connection.query(sqll, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'SalesOrder Products.',
+                data: data
+            });
+        }
+    });
+});
+
+app.post('/SalesOrderByHSNCode', (req, res) => {
+    const HSN_Code = req.body.HSN_Code;
+    const sqll = `SELECT saleorder.*, saleproduct.* 
+    FROM salesorder saleorder 
+    JOIN salesorderitems saleproduct 
+    ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id 
+    WHERE saleproduct.HSN_Code = ?`
+    connection.query(sqll, HSN_Code, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Saleorder BY HSN Code.',
+                data: data
+            });
+        }
+    });
+});
+
+app.post('/SalesOrderByCustomerName', (req, res) => {
+    const Customer_Name = req.body.Customer_Name;
+    const sqll = `SELECT saleorder.*, saleproduct.* 
+    FROM salesorder saleorder 
+    JOIN salesorderitems saleproduct 
+    ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id 
+    WHERE saleorder.Customer_Name = ?`
+    connection.query(sqll, Customer_Name, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Saleorder BY Customer Name.',
+                data: data
+            });
+        }
+    });
+});
+
+app.post('/SalesOrderByCompanyName', (req, res) => {
+    const Company_Name = req.body.Company_Name;
+    const sqll = `SELECT saleorder.*, saleproduct.* 
+    FROM salesorder saleorder 
+    JOIN salesorderitems saleproduct 
+    ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id 
+    WHERE saleorder.Company_Name = ?`
+    connection.query(sqll, Company_Name, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Saleorder BY Company Name.',
+                data: data
+            });
+        }
+    });
+});
+
+app.post('/SalesOrderByAdded_Date', (req, res) => {
+    const Added_Date = req.body.Added_Date;
+    const sqll = `SELECT saleorder.*, saleproduct.* 
+    FROM salesorder saleorder 
+    JOIN salesorderitems saleproduct 
+    ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id 
+      WHERE DATE(saleorder.Added_Date)= ?
+    GROUP BY saleorder.SalesOrder_id;`
+    connection.query(sqll, Added_Date, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Saleorder BY Added Date.',
+                data: data
+            });
+        }
+    });
+});
+
+app.post('/SalesOrderBySales_Order_Status', (req, res) => {
+    const Sales_Order_Status = req.body.Sales_Order_Status;
+    // const sqll = `SELECT DISTINCT HSN_Code, Product_Name FROM salesorderitems WHERE HSN_Code IS NOT NULL AND HSN_Code != '' ORDER BY HSN_Code;`
+    const sqll = `SELECT saleorder.*, saleproduct.* 
+    FROM salesorder saleorder 
+    JOIN salesorderitems saleproduct 
+    ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id 
+    WHERE saleorder.Sales_Order_Status = ?`
+    connection.query(sqll,Sales_Order_Status, (err, data) => {
+        if (err) {
+            res.status(500).send({
+                success: false,
+                message: err.sqlMessage,
+                data: []
+            });
+        } else {
+            res.status(200).send({
+                success: true,
+                message: 'Saleorder BY Added Date.',
+                data: data
+            });
+        }
+    });
+});
 
 app.get('/SalesOrderbyId/:SalesOrder_id', (req, res) => {
     const { SalesOrder_id } = req.params;
@@ -11813,7 +11954,7 @@ app.get('/GetCustomerDeletionHistoryById/:CustomerDeletion_id',
 app.get('/GetVendorDeletionHistoryById/:VendorDeletion_id',
     (req, res) => {
         const token = req.headers['x-access-token'];
-        const VendorDeletion_id  = req.params.VendorDeletion_id ;
+        const VendorDeletion_id = req.params.VendorDeletion_id;
         if (!token) {
             return res.status(401).json({
                 success: false,
@@ -11839,7 +11980,7 @@ app.get('/GetVendorDeletionHistoryById/:VendorDeletion_id',
                 FROM vendor_deletion_history
                 WHERE VendorDeletion_id  = ?
                 `,
-                [VendorDeletion_id ],
+                [VendorDeletion_id],
                 (err, result) => {
                     if (err) {
                         return res.status(500).json({
@@ -11873,7 +12014,7 @@ app.get('/GetVendorDeletionHistoryById/:VendorDeletion_id',
 app.get('/GetAdminDeletionHistoryById/:AdminDeletion_id',
     (req, res) => {
         const token = req.headers['x-access-token'];
-        const AdminDeletion_id  = req.params.AdminDeletion_id ;
+        const AdminDeletion_id = req.params.AdminDeletion_id;
         if (!token) {
             return res.status(401).json({
                 success: false,
@@ -13063,7 +13204,6 @@ app.post("/CreateVendorChallanReceipt/:VendorChallan_id",
                         err ? reject(err) : resolve()
                     );
                 });
-
                 // Lock the original challan.
                 const challans = await query(
                     `SELECT VendorChallan_id
@@ -13981,6 +14121,7 @@ app.post('/ExtraProductByProductName', (req, res) => {
         }
     });
 });
+
 app.get("/GetProductExtraStock", (req, res) => {
     const Product_Name = String(req.query.Product_Name || "").trim();
     const HSN_Code = String(req.query.HSN_Code || "").trim();
