@@ -2993,7 +2993,6 @@ app.post("/AddInletchallan", async (req, res) => {
             message: "Invalid discount amount"
         });
     }
-
     // Validate all products before starting database changes.
     for (const item of items) {
         const productName = String(item.Product_Name || "").trim();
@@ -3048,7 +3047,6 @@ app.post("/AddInletchallan", async (req, res) => {
                 );
             }
         }
-
         // 2. Generate Challan Code.
         const today = new Date();
 
@@ -3291,7 +3289,6 @@ app.post("/AddInletchallan", async (req, res) => {
             VALUES ?`,
             [productValues]
         );
-
         // 7. Update Sales Order only after products are inserted.
         if (Sales_Order_Number) {
             const orderUpdate = await queryAsync(
@@ -3302,17 +3299,14 @@ app.post("/AddInletchallan", async (req, res) => {
                    AND Sales_Order_Status = 'Confirm'`,
                 [Sales_Order_Number]
             );
-
             if (orderUpdate.affectedRows !== 1) {
                 throw new Error(
                     "Sales Order status could not be updated."
                 );
             }
         }
-
         // 8. Commit challan, products and stock deductions together.
         await commitAsync(conn);
-
         return res.status(201).json({
             success: true,
             message: "Inlet Challan created successfully.",
@@ -3325,15 +3319,12 @@ app.post("/AddInletchallan", async (req, res) => {
         });
 
     } catch (error) {
-
         await rollbackAsync(conn);
-
         console.error("AddInletchallan error:", error);
-
         return res.status(500).json({
             success: false,
-            message: error.message ||
-                "Failed to create Inlet Challan."
+            message: error.message || "Failed to create Inlet Challan.",
+            data: []
         });
     }
 });
@@ -5022,17 +5013,6 @@ app.get('/AllChallan', (req, res) => {
 
 app.get('/LimitedChallan', (req, res) => {
     const newquery = `SELECT * FROM inletchallan ORDER BY Challan_id DESC LIMIT 3;`;
-    //     const newquery = `SELECT challan.Challan_id, challan.*, iproduct.*
-    // FROM inletchallan challan
-    // JOIN inletproducts iproduct
-    // ON challan.Challan_id = iproduct.Challan_id
-    // ORDER BY challan.Challan_id DESC
-    // LIMIT 3;`;
-    // const newquery = `SELECT challan.*, iproduct.*
-    // FROM inletchallan challan
-    // JOIN inletproducts iproduct 
-    // ON challan.Challan_id = iproduct.Challan_id
-    // LIMIT challan.3`;
 
     connection.query(newquery, (err, rows) => {
         if (err) {
@@ -5958,8 +5938,279 @@ app.get('/PrintInletchallan/:Challan_id', (req, res) => {
 
 // Outward Challan
 
-app.post("/NEWAddvendorchallan", (req, res) => {
+// app.post("/NEWAddvendorchallan", (req, res) => {
 
+//     const {
+//         Vendor_Name,
+//         Vendor_CompanyName,
+//         Vendor_CompanyAddress,
+//         VendorGST_No,
+//         Vendor_Phoneno,
+//         Vendor_Email,
+
+//         Mode_of_Transport,
+//         Transporter_Name,
+//         Vehicle_Number,
+//         Remark,
+//         Product_Status,
+//         Delivery_Status,
+//         Challan_Status,
+
+//         vendoritems
+//     } = req.body;
+
+//     if (!vendoritems || vendoritems.length === 0) {
+//         return res.status(400).json({
+//             success: false,
+//             message: "Products Required"
+//         });
+//     }
+
+//     const today = new Date();
+//     const datePart =
+//         today.getFullYear().toString() +
+//         String(today.getMonth() + 1).padStart(2, "0");
+//     // const datePart =
+//     //     today.getFullYear().toString() +
+//     //     String(today.getMonth() + 1).padStart(2, "0") +
+//     //     String(today.getDate()).padStart(2, "0");
+
+//     const codeSql = `
+//     SELECT VendorChallan_Code
+//     FROM vendorchallan
+//     WHERE VendorChallan_Code LIKE ?
+//     ORDER BY VendorChallan_id DESC
+//     LIMIT 1
+//     `;
+
+//     connection.query(
+//         codeSql,
+//         [`VC_${datePart}_%`],
+//         (err, result) => {
+
+//             if (err)
+//                 return res.status(500).json(err);
+
+//             let NewCode = `VC_${datePart}_01`;
+
+//             if (result.length > 0) {
+
+//                 const last = parseInt(result[0].VendorChallan_Code.split("_")[2]);
+
+//                 NewCode = `VC_${datePart}_${String(last + 1).padStart(2, "0")}`;
+//             }
+
+//             let SubTotal = 0;
+
+//             vendoritems.forEach(item => {
+
+//                 SubTotal += Number(item.Rate) * Number(item.Product_Quantity);
+
+//             });
+
+//             const Total_Amount = SubTotal;
+//             const CGST_amount = Total_Amount * 0.09;
+//             const SGST_amount = Total_Amount * 0.09;
+//             const Grand_Total = Total_Amount + CGST_amount + SGST_amount;
+
+//             const challanSql = `
+//             INSERT INTO vendorchallan
+//             (
+//                 VendorChallan_Code,
+//                 Vendor_Name,
+//                 Vendor_CompanyName,
+//                 Vendor_CompanyAddress,
+//                 VendorGST_No,
+//                 Vendor_Phoneno,
+//                 Vendor_Email,
+
+//                 Sub_Total,
+//                 Total_Amount,
+//                 CGST_amount,
+//                 SGST_amount,
+//                 Grand_Total,
+
+//                 Mode_of_Transport,
+//                 Transporter_Name,
+//                 Vehicle_Number,
+//                 Remark,
+
+//                 Product_Status,
+//                 Delivery_Status,
+//                 Challan_Status,
+
+//                 Added_Date,
+//                 Updated_Date
+//             )
+//             VALUES
+//             (
+//                 ?,?,?,?,?,?,
+//                 ?,?,?,?,?,?,
+//                 ?,?,?,?,
+//                 ?,?,?,
+//                 NOW(),
+//                 NOW()
+//             )
+//             `;
+
+//             connection.query(
+//                 challanSql,
+//                 [
+//                     NewCode,
+//                     Vendor_Name,
+//                     Vendor_CompanyName,
+//                     Vendor_CompanyAddress,
+//                     VendorGST_No,
+//                     Vendor_Phoneno,
+//                     Vendor_Email,
+
+//                     SubTotal,
+//                     Total_Amount,
+//                     CGST_amount,
+//                     SGST_amount,
+//                     Grand_Total,
+
+//                     Mode_of_Transport,
+//                     Transporter_Name,
+//                     Vehicle_Number,
+//                     Remark,
+
+//                     Product_Status,
+//                     Delivery_Status,
+//                     Challan_Status
+//                 ],
+//                 (err, challanResult) => {
+
+//                     if (err)
+//                         return res.status(500).json(err);
+
+//                     const VendorChallan_id = challanResult.insertId;
+
+//                     insertProducts(0);
+
+//                     function insertProducts(index) {
+
+//                         if (index >= vendoritems.length) {
+
+//                             return res.json({
+//                                 success: true,
+//                                 message: "Vendor Challan Added Successfully",
+//                                 VendorChallan_Code: NewCode
+//                             });
+
+//                         }
+
+//                         const item = vendoritems[index];
+
+//                         const productSql = `
+//                         INSERT INTO vendorproducts
+//                         (
+//                             VendorChallan_id,
+//                             Product_Name,
+//                             HSN_Code,
+//                             Product_Quantity,
+//                             Rate,
+//                             SubTotal
+//                         )
+//                         VALUES (?,?,?,?,?,?)
+//                         `;
+
+//                         connection.query(
+//                             productSql,
+//                             [
+//                                 VendorChallan_id,
+//                                 item.Product_Name,
+//                                 item.HSN_Code,
+//                                 item.Product_Quantity,
+//                                 item.Rate,
+//                                 item.Product_Quantity * item.Rate
+//                             ],
+//                             (err, productResult) => {
+
+//                                 if (err)
+//                                     return res.status(500).json(err);
+
+//                                 const VendorProduct_id = productResult.insertId;
+
+//                                 if (item.operations && item.operations.length > 0) {
+
+//                                     const operationValues = item.operations.map(op => [
+
+//                                         VendorProduct_id,
+
+//                                         op.Operation_Name,
+
+//                                         op.Rate
+
+//                                     ]);
+
+//                                     const operationSql = `
+//         INSERT INTO vendorproduct_operations
+//         (
+//             VendorProduct_id,
+//             Operation_Name,
+//             Rate
+//         )
+//         VALUES ?
+//     `;
+
+//                                     connection.query(operationSql, [operationValues], (err) => {
+
+//                                         if (err) {
+//                                             console.log(err);
+//                                             return res.status(500).json(err);
+//                                         }
+
+//                                         insertProducts(index + 1);
+
+//                                     });
+
+//                                 }
+//                                 else {
+
+//                                     insertProducts(index + 1);
+
+//                                 }
+//                                 // if (
+//                                 //     item.Operation_Perform &&
+//                                 //     item.Operation_Perform.length > 0
+//                                 // ) {
+
+//                                 //     const operationValues = item.Operation_Perform.map(op => [
+//                                 //         VendorProduct_id,
+//                                 //         op
+//                                 //     ]);
+
+//                                 //     const operationSql = `
+//                                 //     INSERT INTO vendorproduct_operations
+//                                 //     (
+//                                 //         VendorProduct_id,
+//                                 //         Operation_Name,
+//                                 //         Rate
+//                                 //     )
+//                                 //     VALUES ?
+//                                 //     `;
+//                                 //     connection.query(
+//                                 //         operationSql,
+//                                 //         [operationValues],
+//                                 //         (err) => {
+//                                 //             if (err)
+//                                 //                 return res.status(500).json(err);
+//                                 //             insertProducts(index + 1);
+//                                 //         }
+//                                 //     );
+//                                 // }
+//                                 // else {
+//                                 //     insertProducts(index + 1);
+//                                 // }
+//                             });
+//                     }
+//                 });
+//         });
+// });
+
+
+app.post("/NEWAddvendorchallan", (req, res) => {
     const {
         Vendor_Name,
         Vendor_CompanyName,
@@ -5967,76 +6218,114 @@ app.post("/NEWAddvendorchallan", (req, res) => {
         VendorGST_No,
         Vendor_Phoneno,
         Vendor_Email,
-
         Mode_of_Transport,
         Transporter_Name,
         Vehicle_Number,
-        Remark,
-        Product_Status,
-        Delivery_Status,
-        Challan_Status,
-
+        Remark = "",
+        Product_Status = "Pending",
+        Delivery_Status = "Not Delivered",
+        Challan_Status = "Open",
         vendoritems
     } = req.body;
 
-    if (!vendoritems || vendoritems.length === 0) {
+    if (!vendoritems || !vendoritems.length) {
         return res.status(400).json({
             success: false,
             message: "Products Required"
         });
     }
 
+    // Generate Vendor Challan Number
     const today = new Date();
 
     const datePart =
         today.getFullYear().toString() +
         String(today.getMonth() + 1).padStart(2, "0");
-    // const datePart =
-    //     today.getFullYear().toString() +
-    //     String(today.getMonth() + 1).padStart(2, "0") +
-    //     String(today.getDate()).padStart(2, "0");
 
-    const codeSql = `
-    SELECT VendorChallan_Code
-    FROM vendorchallan
-    WHERE VendorChallan_Code LIKE ?
-    ORDER BY VendorChallan_id DESC
-    LIMIT 1
+    const numberSql = `
+        SELECT VendorChallan_Code
+        FROM vendorchallan
+        WHERE VendorChallan_Code LIKE ?
+        ORDER BY VendorChallan_id DESC
+        LIMIT 1
     `;
 
     connection.query(
-        codeSql,
+        numberSql,
         [`VC_${datePart}_%`],
         (err, result) => {
 
-            if (err)
-                return res.status(500).json(err);
-
-            let NewCode = `VC_${datePart}_01`;
-
-            if (result.length > 0) {
-
-                const last = parseInt(result[0].VendorChallan_Code.split("_")[2]);
-
-                NewCode = `VC_${datePart}_${String(last + 1).padStart(2, "0")}`;
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    message: "Error generating Vendor Challan Number",
+                    error: err
+                });
             }
 
-            let SubTotal = 0;
+            let VendorChallan_Code = `VC_${datePart}_01`;
+
+            if (result.length > 0) {
+                const last = parseInt(
+                    result[0].VendorChallan_Code.split("_")[2],
+                    10
+                );
+
+                VendorChallan_Code =
+                    `VC_${datePart}_${String(last + 1).padStart(2, "0")}`;
+            }
+
+            // Calculate Sub Total
+            let Sub_Total = 0;
 
             vendoritems.forEach(item => {
 
-                SubTotal += Number(item.Rate) * Number(item.Product_Quantity);
+                const qty = Number(item.Product_Quantity) || 0;
+                const rate = Number(item.Rate) || 0;
 
+                Sub_Total += qty * rate;
             });
 
-            const Total_Amount = SubTotal;
+            // Calculate Discount and Tax
+            const Total_Amount = Sub_Total;
+
             const CGST_amount = Total_Amount * 0.09;
             const SGST_amount = Total_Amount * 0.09;
-            const Grand_Total = Total_Amount + CGST_amount + SGST_amount;
 
+            const Grand_Total =
+                Total_Amount + CGST_amount + SGST_amount;
+
+            // Insert Vendor Challan
             const challanSql = `
-            INSERT INTO vendorchallan
-            (
+                INSERT INTO vendorchallan
+                (
+                    VendorChallan_Code,
+                    Vendor_Name,
+                    Vendor_CompanyName,
+                    Vendor_CompanyAddress,
+                    VendorGST_No,
+                    Vendor_Phoneno,
+                    Vendor_Email,
+                    Mode_of_Transport,
+                    Transporter_Name,
+                    Vehicle_Number,
+                    Sub_Total,
+                    Total_Amount,
+                    CGST_amount,
+                    SGST_amount,
+                    Grand_Total,
+                    Remark,
+                    Product_Status,
+                    Delivery_Status,
+                    Challan_Status
+                )
+                VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+            `;
+
+            const challanValues = [
                 VendorChallan_Code,
                 Vendor_Name,
                 Vendor_CompanyName,
@@ -6044,86 +6333,37 @@ app.post("/NEWAddvendorchallan", (req, res) => {
                 VendorGST_No,
                 Vendor_Phoneno,
                 Vendor_Email,
-
+                Mode_of_Transport,
+                Transporter_Name,
+                Vehicle_Number,
                 Sub_Total,
                 Total_Amount,
                 CGST_amount,
                 SGST_amount,
                 Grand_Total,
-
-                Mode_of_Transport,
-                Transporter_Name,
-                Vehicle_Number,
                 Remark,
-
                 Product_Status,
                 Delivery_Status,
-                Challan_Status,
-
-                Added_Date,
-                Updated_Date
-            )
-            VALUES
-            (
-                ?,?,?,?,?,?,
-                ?,?,?,?,?,?,
-                ?,?,?,?,
-                ?,?,?,
-                NOW(),
-                NOW()
-            )
-            `;
+                Challan_Status
+            ];
 
             connection.query(
                 challanSql,
-                [
-                    NewCode,
-                    Vendor_Name,
-                    Vendor_CompanyName,
-                    Vendor_CompanyAddress,
-                    VendorGST_No,
-                    Vendor_Phoneno,
-                    Vendor_Email,
-
-                    SubTotal,
-                    Total_Amount,
-                    CGST_amount,
-                    SGST_amount,
-                    Grand_Total,
-
-                    Mode_of_Transport,
-                    Transporter_Name,
-                    Vehicle_Number,
-                    Remark,
-
-                    Product_Status,
-                    Delivery_Status,
-                    Challan_Status
-                ],
+                challanValues,
                 (err, challanResult) => {
 
-                    if (err)
-                        return res.status(500).json(err);
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            message: "Vendor Challan creation failed",
+                            error: err
+                        });
+                    }
 
                     const VendorChallan_id = challanResult.insertId;
 
-                    insertProducts(0);
-
-                    function insertProducts(index) {
-
-                        if (index >= vendoritems.length) {
-
-                            return res.json({
-                                success: true,
-                                message: "Vendor Challan Added Successfully",
-                                VendorChallan_Code: NewCode
-                            });
-
-                        }
-
-                        const item = vendoritems[index];
-
-                        const productSql = `
+                    // Insert Multiple Products
+                    const productSql = `
                         INSERT INTO vendorproducts
                         (
                             VendorChallan_id,
@@ -6133,102 +6373,111 @@ app.post("/NEWAddvendorchallan", (req, res) => {
                             Rate,
                             SubTotal
                         )
-                        VALUES (?,?,?,?,?,?)
-                        `;
+                        VALUES ?
+                    `;
 
-                        connection.query(
-                            productSql,
-                            [
-                                VendorChallan_id,
-                                item.Product_Name,
-                                item.HSN_Code,
-                                item.Product_Quantity,
-                                item.Rate,
-                                item.Product_Quantity * item.Rate
-                            ],
-                            (err, productResult) => {
+                    const productValues = vendoritems.map(item => [
 
-                                if (err)
-                                    return res.status(500).json(err);
+                        VendorChallan_id,
+                        item.Product_Name,
+                        item.HSN_Code,
+                        Number(item.Product_Quantity) || 0,
+                        Number(item.Rate) || 0,
+                        (Number(item.Product_Quantity) || 0) *
+                        (Number(item.Rate) || 0)
 
-                                const VendorProduct_id = productResult.insertId;
+                    ]);
 
-                                if (item.operations && item.operations.length > 0) {
+                    connection.query(
+                        productSql,
+                        [productValues],
+                        (err, productResult) => {
 
-                                    const operationValues = item.operations.map(op => [
+                            if (err) {
+                                return res.status(500).json({
+                                    success: false,
+                                    message: "Vendor Challan products failed",
+                                    error: err
+                                });
+                            }
 
-                                        VendorProduct_id,
+                            // Get inserted product IDs
+                            const firstProductId = productResult.insertId;
 
-                                        op.Operation_Name,
+                            const operationValues = [];
 
-                                        op.Rate
+                            vendoritems.forEach((item, index) => {
 
-                                    ]);
+                                const VendorProduct_id =
+                                    firstProductId + index;
 
-                                    const operationSql = `
-        INSERT INTO vendorproduct_operations
-        (
-            VendorProduct_id,
-            Operation_Name,
-            Rate
-        )
-        VALUES ?
-    `;
+                                if (item.operations && item.operations.length) {
 
-                                    connection.query(operationSql, [operationValues], (err) => {
+                                    item.operations.forEach(operation => {
 
-                                        if (err) {
-                                            console.log(err);
-                                            return res.status(500).json(err);
-                                        }
-
-                                        insertProducts(index + 1);
+                                        operationValues.push([
+                                            VendorProduct_id,
+                                            operation.Operation_Name,
+                                            Number(operation.Rate) || 0
+                                        ]);
 
                                     });
-
                                 }
-                                else {
-
-                                    insertProducts(index + 1);
-
-                                }
-                                // if (
-                                //     item.Operation_Perform &&
-                                //     item.Operation_Perform.length > 0
-                                // ) {
-
-                                //     const operationValues = item.Operation_Perform.map(op => [
-                                //         VendorProduct_id,
-                                //         op
-                                //     ]);
-
-                                //     const operationSql = `
-                                //     INSERT INTO vendorproduct_operations
-                                //     (
-                                //         VendorProduct_id,
-                                //         Operation_Name,
-                                //         Rate
-                                //     )
-                                //     VALUES ?
-                                //     `;
-                                //     connection.query(
-                                //         operationSql,
-                                //         [operationValues],
-                                //         (err) => {
-                                //             if (err)
-                                //                 return res.status(500).json(err);
-                                //             insertProducts(index + 1);
-                                //         }
-                                //     );
-                                // }
-                                // else {
-                                //     insertProducts(index + 1);
-                                // }
                             });
-                    }
-                });
-        });
+
+                            // Insert Multiple Operations
+                            if (operationValues.length > 0) {
+
+                                const operationSql = `
+                                    INSERT INTO vendorproduct_operations
+                                    (
+                                        VendorProduct_id,
+                                        Operation_Name,
+                                        Rate
+                                    )
+                                    VALUES ?
+                                `;
+
+                                connection.query(
+                                    operationSql,
+                                    [operationValues],
+                                    (err) => {
+
+                                        if (err) {
+                                            return res.status(500).json({
+                                                success: false,
+                                                message: "Vendor Challan operations failed",
+                                                error: err
+                                            });
+                                        }
+
+                                        return res.json({
+                                            success: true,
+                                            message: "Vendor Challan Created Successfully",
+                                            VendorChallan_id,
+                                            VendorChallan_Code
+                                        });
+                                    }
+                                );
+
+                            } else {
+
+                                return res.json({
+                                    success: true,
+                                    message: "Vendor Challan Created Successfully",
+                                    VendorChallan_id,
+                                    VendorChallan_Code
+                                });
+
+                            }
+                        }
+                    );
+                }
+            );
+        }
+    );
 });
+
 
 app.post("/Addvendorchallan", (req, res) => {
     const {
@@ -9718,7 +9967,6 @@ app.post("/AddSalesOrder", (req, res) => {
         Company_Address,
         GST_No,
         Delivery_Address,
-
         Discount_Amount = 0,
         Remark = "",
         items
@@ -9732,11 +9980,7 @@ app.post("/AddSalesOrder", (req, res) => {
     }
 
     const today = new Date();
-
-    const datePart =
-        today.getFullYear().toString() +
-        String(today.getMonth() + 1).padStart(2, "0")
-
+    const datePart = today.getFullYear().toString() + String(today.getMonth() + 1).padStart(2, "0")
     const numberSql = `
         SELECT Sales_Order_Number
         FROM salesorder
@@ -9744,9 +9988,7 @@ app.post("/AddSalesOrder", (req, res) => {
         ORDER BY SalesOrder_id DESC
         LIMIT 1
     `;
-
     connection.query(numberSql, (err, result) => {
-
         if (err) {
             return res.status(500).json({
                 success: false,
@@ -9754,42 +9996,22 @@ app.post("/AddSalesOrder", (req, res) => {
                 error: err
             });
         }
-
-        let Sales_Order_Number =
-            `SO_${datePart}_01`;
-
+        let Sales_Order_Number = `SO_${datePart}_01`;
         if (result.length > 0) {
-
-            const last =
-                parseInt(
-                    result[0]
-                        .Sales_Order_Number
-                        .split("_")[2]
-                );
-
-            Sales_Order_Number =
-                `SO_${datePart}_${String(last + 1).padStart(2, "0")}`;
+            const last = parseInt(result[0].Sales_Order_Number.split("_")[2]);
+            Sales_Order_Number = `SO_${datePart}_${String(last + 1).padStart(2, "0")}`;
         }
-
         let Sub_Total = 0;
-
         items.forEach(item => {
-
-            const qty =
-                Number(item.Ordered_Quantity) || 0;
-
-            const rate =
-                Number(item.Rate) || 0;
-
+            const qty = Number(item.Ordered_Quantity) || 0;
+            const rate = Number(item.Rate) || 0;
             Sub_Total += qty * rate;
         });
-
         const Discount = Number(Discount_Amount) || 0;
         const Total_Amount = Sub_Total - Discount;
         const CGST_amount = Total_Amount * 0.09;
         const SGST_amount = Total_Amount * 0.09;
         const Grand_Total = Total_Amount + CGST_amount + SGST_amount;
-
         const orderSql = `
             INSERT INTO salesorder
             (
@@ -9813,7 +10035,6 @@ app.post("/AddSalesOrder", (req, res) => {
                     ?, ?, ?,
                     ?, 'Draft')
         `;
-
         const values = [
             Sales_Order_Number,
             Customer_Name,
@@ -9829,10 +10050,7 @@ app.post("/AddSalesOrder", (req, res) => {
             Grand_Total,
             Remark
         ];
-
-        connection.query(
-            orderSql,
-            values,
+        connection.query(orderSql, values,
             (err, result) => {
                 if (err) {
                     return res.status(500).json({
@@ -9854,7 +10072,6 @@ app.post("/AddSalesOrder", (req, res) => {
                     )
                     VALUES ?
                 `;
-
                 const itemValues =
                     items.map(item => [
                         SalesOrder_id,
@@ -9862,8 +10079,7 @@ app.post("/AddSalesOrder", (req, res) => {
                         item.HSN_Code,
                         Number(item.Ordered_Quantity) || 0,
                         Number(item.Rate) || 0,
-                        (Number(item.Ordered_Quantity) || 0) *
-                        (Number(item.Rate) || 0)
+                        (Number(item.Ordered_Quantity) || 0) * (Number(item.Rate) || 0)
                     ]);
                 connection.query(itemSql, [itemValues],
                     err => {
@@ -10201,7 +10417,7 @@ app.post('/SalesOrderBySales_Order_Status', (req, res) => {
     JOIN salesorderitems saleproduct 
     ON saleorder.SalesOrder_id = saleproduct.SalesOrder_id 
     WHERE saleorder.Sales_Order_Status = ?`
-    connection.query(sqll,Sales_Order_Status, (err, data) => {
+    connection.query(sqll, Sales_Order_Status, (err, data) => {
         if (err) {
             res.status(500).send({
                 success: false,
@@ -13511,7 +13727,6 @@ app.post("/CreateVendorChallanReceipt/:VendorChallan_id",
     }
 );
 
-
 app.get("/GetVendorChallanPending/:VendorChallan_id",
     (req, res) => {
         const challanId = Number(req.params.VendorChallan_id);
@@ -13749,8 +13964,7 @@ app.get("/GetVendorChallanReceipts", (req, res) => {
 });
 
 
-app.get(
-    "/GetVendorChallanPending/:VendorChallan_id",
+app.get("/GetVendorChallanPending/:VendorChallan_id",
     (req, res) => {
         const challanId = Number(req.params.VendorChallan_id);
 
@@ -13876,6 +14090,200 @@ app.get("/GetVendorChallanOperations/:VendorChallan_id",
         });
     }
 );
+
+app.get('/GetVendorProductHSNByProductName/:Product_Name', (req, res) => {
+    const Product_Name = req.params.Product_Name.trim();
+
+    const sql = `
+        SELECT HSN_Code, Product_Name
+        FROM vendorproducts
+        WHERE LOWER(TRIM(Product_Name)) = LOWER(TRIM(?))
+        AND HSN_Code IS NOT NULL
+        AND HSN_Code != ''
+        ORDER BY VendorProduct_id DESC
+        LIMIT 1
+    `;
+    connection.query(sql, [Product_Name], (err, result) => {
+        if (err) {
+            return res.status(500).json({
+                success: false,
+                message: 'Error fetching HSN Code',
+                error: err
+            });
+        }
+        if (result.length > 0) {
+            return res.json({
+                success: true,
+                found: true,
+                HSN_Code: result[0].HSN_Code
+            });
+        }
+        return res.json({
+            success: true,
+            found: false,
+            HSN_Code: ''
+        });
+    });
+});
+
+app.get('/VendorProductGetHSNByProductName', (req, res) => {
+
+    const Product_Name = String(req.query.Product_Name || '').trim();
+
+    if (!Product_Name) {
+        return res.status(400).json({
+            success: false,
+            message: 'Product Name Required'
+        });
+    }
+
+    const sql = `
+        SELECT HSN_Code, Product_Name
+        FROM vendorproducts
+        WHERE LOWER(TRIM(Product_Name)) = LOWER(TRIM(?))
+        AND HSN_Code IS NOT NULL
+        AND HSN_Code != ''
+        ORDER BY VendorProduct_id DESC
+        LIMIT 1
+    `;
+
+    connection.query(sql, [Product_Name], (err, result) => {
+        if (err) {
+            return res.status(500).json({
+                success: false,
+                message: 'Error fetching HSN Code',
+                error: err
+            });
+        }
+        if (result.length > 0) {
+            return res.status(200).json({
+                success: true,
+                found: true,
+                HSN_Code: result[0].HSN_Code
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            found: false,
+            HSN_Code: ''
+        });
+
+    });
+});
+
+app.post('/UpdateVendorChallanReceipt', (req, res) => {
+
+    const {
+        VendorProduct_id,
+        Received_Quantity,
+        Pending_Reason
+    } = req.body;
+
+    const sql = `
+    SELECT Product_Quantity, Received_Quantity
+    FROM vendorproducts
+    WHERE VendorProduct_id = ?
+  `;
+
+    connection.query(sql, [VendorProduct_id], (err, result) => {
+        if (err) return res.status(500).send(err);
+        if (!result.length) {
+            return res.status(404).send({
+                message: 'Vendor Challan Item not found'
+            });
+        }
+
+        const sentQty = Number(result[0].Product_Quantity);
+        const receivedQty = Number(Received_Quantity);
+
+        if (
+            !Number.isFinite(receivedQty) ||
+            receivedQty < 0 ||
+            receivedQty < Number(result[0].Received_Quantity) ||
+            receivedQty > sentQty
+        ) {
+            return res.status(400).send({
+                message: 'Invalid received quantity'
+            });
+        }
+        const pendingQty = sentQty - receivedQty;
+        const updateSql = `
+      UPDATE vendorproducts
+      SET
+        Received_Quantity = ?,
+        Pending_Quantity = ?,
+        Pending_Reason = ?
+      WHERE VendorProduct_id = ?
+    `;
+        connection.query(
+            updateSql,
+            [
+                receivedQty,
+                pendingQty,
+                pendingQty > 0 ? Pending_Reason : null,
+                VendorProduct_id
+            ],
+            (err) => {
+                if (err) return res.status(500).send(err);
+                res.status(200).send({
+                    message: 'Vendor receipt updated successfully',
+                    Received_Quantity: receivedQty,
+                    Pending_Quantity: pendingQty
+                });
+            });
+    });
+});
+
+// app.get("/VendorProductGetHSNByProductName", (req, res) => {
+//     const Product_Name = String(
+//         req.query.Product_Name || ""
+//     ).trim();
+//     if (!Product_Name) {
+//         return res.status(400).json({
+//             success: false,
+//             message: "Product name is required"
+//         });
+//     }
+
+//     const sql = `
+//         SELECT voi.HSN_Code, voi.Product_Name
+//         FROM vendorproducts AS voi
+//         INNER JOIN vendorchallan AS vc
+//             ON vc.VendorChallan_id = voi.VendorChallan_id
+//         WHERE LOWER(TRIM(voi.Product_Name)) =
+//               LOWER(TRIM(?))
+//           AND voi.HSN_Code IS NOT NULL
+//           AND TRIM(voi.HSN_Code) <> ''
+//         ORDER BY vc.VendorChallan_id DESC
+//         LIMIT 1
+//     `;
+
+//     connection.query(sql, [Product_Name], (err, result) => {
+//         if (err) {
+//             console.error("HSN fetch error:", err);
+
+//             return res.status(500).json({
+//                 success: false,
+//                 message: "Error fetching HSN code"
+//             });
+//         }
+
+//         if (result.length === 0) {
+//             return res.status(200).json({
+//                 success: true,
+//                 found: false,
+//                 HSN_Code: ""
+//             });
+//         }
+
+//         return res.status(200).json({
+//             success: true,
+//             found: true,
+//             HSN_Code: result[0].HSN_Code
+//         });
+//     });
+// });
 
 // Product Extra manufacutring details finds.
 
