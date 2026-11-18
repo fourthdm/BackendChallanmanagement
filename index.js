@@ -13898,7 +13898,6 @@ app.get("/GetVendorChallanReceipt/:VendorChallan_id", async (req, res) => {
 }
 );
 
-
 app.get("/GetVendorChallanReceipts", (req, res) => {
     const sql = `
     SELECT
@@ -13962,7 +13961,6 @@ app.get("/GetVendorChallanReceipts", (req, res) => {
         });
     });
 });
-
 
 app.get("/GetVendorChallanPending/:VendorChallan_id",
     (req, res) => {
@@ -14172,6 +14170,38 @@ app.get('/VendorProductGetHSNByProductName', (req, res) => {
     });
 });
 
+app.get('/GetVendorChallanProducts/:VendorChallan_id', (req, res) => {
+    const { VendorChallan_id } = req.params;
+    const sql = `
+        SELECT
+            VendorProduct_id,
+            VendorChallan_id,
+            Product_Name,
+            HSN_Code,
+            Product_Quantity,
+            Rate,
+            SubTotal,
+            Received_Quantity,
+            Pending_Quantity,
+            Pending_Reason
+        FROM vendorproducts
+        WHERE VendorChallan_id = ?
+        ORDER BY VendorProduct_id ASC
+    `;
+
+    connection.query(sql, [VendorChallan_id], (err, result) => {
+
+        if (err) {
+            return res.status(500).send(err);
+        }
+
+        res.status(200).json(result);
+
+    });
+
+});
+
+
 app.post('/UpdateVendorChallanReceipt', (req, res) => {
 
     const {
@@ -14181,278 +14211,357 @@ app.post('/UpdateVendorChallanReceipt', (req, res) => {
     } = req.body;
 
     const sql = `
-    SELECT Product_Quantity, Received_Quantity
-    FROM vendorproducts
-    WHERE VendorProduct_id = ?
-  `;
+        SELECT Product_Quantity, Received_Quantity
+        FROM vendorproducts
+        WHERE VendorProduct_id = ?
+    `;
 
     connection.query(sql, [VendorProduct_id], (err, result) => {
         if (err) return res.status(500).send(err);
         if (!result.length) {
             return res.status(404).send({
-                message: 'Vendor Challan Item not found'
+                message: 'Vendor Challan Product not found'
             });
         }
-
         const sentQty = Number(result[0].Product_Quantity);
         const receivedQty = Number(Received_Quantity);
-
-        if (
-            !Number.isFinite(receivedQty) ||
-            receivedQty < 0 ||
-            receivedQty < Number(result[0].Received_Quantity) ||
-            receivedQty > sentQty
-        ) {
-            return res.status(400).send({
+        if (!Number.isFinite(receivedQty) || receivedQty < 0) {
+            return res.status(400).json({
                 message: 'Invalid received quantity'
             });
         }
-        const pendingQty = sentQty - receivedQty;
-        const updateSql = `
-      UPDATE vendorproducts
-      SET
-        Received_Quantity = ?,
-        Pending_Quantity = ?,
-        Pending_Reason = ?
-      WHERE VendorProduct_id = ?
-    `;
-        connection.query(
-            updateSql,
-            [
-                receivedQty,
-                pendingQty,
-                pendingQty > 0 ? Pending_Reason : null,
-                VendorProduct_id
-            ],
-            (err) => {
-                if (err) return res.status(500).send(err);
-                res.status(200).send({
-                    message: 'Vendor receipt updated successfully',
-                    Received_Quantity: receivedQty,
-                    Pending_Quantity: pendingQty
+        // Fetch existing product before updating
+        const sql = `
+    SELECT Product_Quantity, Received_Quantity
+    FROM vendorproducts
+    WHERE VendorProduct_id = ?
+`;
+        connection.query(sql, [VendorProduct_id], (err, result) => {
+            if (err) {
+                return res.status(500).json(err);
+            }
+            if (!result.length) {
+                return res.status(404).json({
+                    message: 'Product not found'
                 });
-            });
+            }
+            const sentQty = Number(result[0].Product_Quantity);
+            const previousReceived = Number(result[0].Received_Quantity || 0);
+            if (
+                receivedQty < previousReceived ||
+                receivedQty > sentQty
+            ) {
+                return res.status(400).json({
+                    message: 'Invalid received quantity',
+                    previousReceived,
+                    sentQty,
+                    receivedQty
+                });
+            }
+            const pendingQty = sentQty - receivedQty;
+            const updateSql = `
+            UPDATE vendorproducts
+            SET
+                Received_Quantity = ?,
+                Pending_Quantity = ?,
+                Pending_Reason = ?
+            WHERE VendorProduct_id = ?
+        `;
+            connection.query(
+                updateSql,
+                [
+                    receivedQty,
+                    pendingQty,
+                    pendingQty > 0 ? Pending_Reason : null,
+                    VendorProduct_id
+                ],
+                (err, updateResult) => {
+                    if (err) return res.status(500).send(err);
+                    res.status(200).send({
+                        message: 'Vendor receipt updated successfully',
+                        data: updateResult
+                    });
+                }
+            );
+        });
     });
 });
 
-// app.get("/VendorProductGetHSNByProductName", (req, res) => {
-//     const Product_Name = String(
-//         req.query.Product_Name || ""
-//     ).trim();
-//     if (!Product_Name) {
-//         return res.status(400).json({
-//             success: false,
-//             message: "Product name is required"
-//         });
-//     }
+    // app.post('/UpdateVendorChallanReceipt', (req, res) => {
+    //     const {
+    //         VendorProduct_id,
+    //         Received_Quantity,
+    //         Pending_Reason
+    //     } = req.body;
 
-//     const sql = `
-//         SELECT voi.HSN_Code, voi.Product_Name
-//         FROM vendorproducts AS voi
-//         INNER JOIN vendorchallan AS vc
-//             ON vc.VendorChallan_id = voi.VendorChallan_id
-//         WHERE LOWER(TRIM(voi.Product_Name)) =
-//               LOWER(TRIM(?))
-//           AND voi.HSN_Code IS NOT NULL
-//           AND TRIM(voi.HSN_Code) <> ''
-//         ORDER BY vc.VendorChallan_id DESC
-//         LIMIT 1
-//     `;
+    //     const sql = `
+    //     SELECT Product_Quantity, Received_Quantity
+    //     FROM vendorproducts
+    //     WHERE VendorProduct_id = ?
+    //   `;
 
-//     connection.query(sql, [Product_Name], (err, result) => {
-//         if (err) {
-//             console.error("HSN fetch error:", err);
+    //     connection.query(sql, [VendorProduct_id], (err, result) => {
+    //         if (err) return res.status(500).send(err);
+    //         if (!result.length) {
+    //             return res.status(404).send({
+    //                 message: 'Vendor Challan Item not found'
+    //             });
+    //         }
 
-//             return res.status(500).json({
-//                 success: false,
-//                 message: "Error fetching HSN code"
-//             });
-//         }
+    //         const sentQty = Number(result[0].Product_Quantity);
+    //         const receivedQty = Number(Received_Quantity);
 
-//         if (result.length === 0) {
-//             return res.status(200).json({
-//                 success: true,
-//                 found: false,
-//                 HSN_Code: ""
-//             });
-//         }
+    //         if (
+    //             !Number.isFinite(receivedQty) ||
+    //             receivedQty < 0 ||
+    //             receivedQty < Number(result[0].Received_Quantity) ||
+    //             receivedQty > sentQty
+    //         ) {
+    //             return res.status(400).send({
+    //                 message: 'Invalid received quantity'
+    //             });
+    //         }
+    //         const pendingQty = sentQty - receivedQty;
+    //         const updateSql = `
+    //         update vendorproducts set Received_Quantity = ?, Pending_Quantity = ?, Pending_Reason = ?  where VendorChallan_id = ?
+    //     `;
+    //         connection.query(
+    //             updateSql,
+    //             [
+    //                 receivedQty,
+    //                 pendingQty,
+    //                 pendingQty > 0 ? Pending_Reason : null,
+    //                 VendorProduct_id
+    //             ],
+    //             (err) => {
+    //                 if (err) return res.status(500).send(err);
+    //                 res.status(200).send({
+    //                     message: 'Vendor receipt updated successfully',
+    //                     Received_Quantity: receivedQty,
+    //                     Pending_Quantity: pendingQty
+    //                 });
+    //             });
+    //     });
+    // });
 
-//         return res.status(200).json({
-//             success: true,
-//             found: true,
-//             HSN_Code: result[0].HSN_Code
-//         });
-//     });
-// });
+    // app.get("/VendorProductGetHSNByProductName", (req, res) => {
+    //     const Product_Name = String(
+    //         req.query.Product_Name || ""
+    //     ).trim();
+    //     if (!Product_Name) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message: "Product name is required"
+    //         });
+    //     }
 
-// Product Extra manufacutring details finds.
+    //     const sql = `
+    //         SELECT voi.HSN_Code, voi.Product_Name
+    //         FROM vendorproducts AS voi
+    //         INNER JOIN vendorchallan AS vc
+    //             ON vc.VendorChallan_id = voi.VendorChallan_id
+    //         WHERE LOWER(TRIM(voi.Product_Name)) =
+    //               LOWER(TRIM(?))
+    //           AND voi.HSN_Code IS NOT NULL
+    //           AND TRIM(voi.HSN_Code) <> ''
+    //         ORDER BY vc.VendorChallan_id DESC
+    //         LIMIT 1
+    //     `;
 
-// app.put("/UpdateInletProductProduction/:InletProduct_id", (req, res) => {
-//     const InletProduct_id = req.params.InletProduct_id;
+    //     connection.query(sql, [Product_Name], (err, result) => {
+    //         if (err) {
+    //             console.error("HSN fetch error:", err);
 
-//     const {
-//         Produced_Quantity,
-//         Damaged_Quantity = 0,
-//         Faulty_Quantity = 0
-//     } = req.body;
+    //             return res.status(500).json({
+    //                 success: false,
+    //                 message: "Error fetching HSN code"
+    //             });
+    //         }
 
-//     const produced = Number(Produced_Quantity) || 0;
+    //         if (result.length === 0) {
+    //             return res.status(200).json({
+    //                 success: true,
+    //                 found: false,
+    //                 HSN_Code: ""
+    //             });
+    //         }
 
-//     const damaged = Number(Damaged_Quantity) || 0;
+    //         return res.status(200).json({
+    //             success: true,
+    //             found: true,
+    //             HSN_Code: result[0].HSN_Code
+    //         });
+    //     });
+    // });
 
-//     const faulty = Number(Faulty_Quantity) || 0;
+    // Product Extra manufacutring details finds.
 
-//     if (produced < 0) {
-//         return res.status(400).json({
-//             success: false,
-//             message: "Produced quantity cannot be negative"
-//         });
-//     }
+    // app.put("/UpdateInletProductProduction/:InletProduct_id", (req, res) => {
+    //     const InletProduct_id = req.params.InletProduct_id;
 
-//     if (damaged < 0 || faulty < 0) {
-//         return res.status(400).json({
-//             success: false,
-//             message:
-//                 "Damaged/Faulty quantity cannot be negative"
-//         });
-//     }
+    //     const {
+    //         Produced_Quantity,
+    //         Damaged_Quantity = 0,
+    //         Faulty_Quantity = 0
+    //     } = req.body;
 
-//     if (damaged + faulty > produced) {
-//         return res.status(400).json({
-//             success: false,
-//             message:
-//                 "Damaged + Faulty cannot be greater than Produced quantity"
-//         });
-//     }
+    //     const produced = Number(Produced_Quantity) || 0;
 
-//     const getSql = `
-//         SELECT *
-//         FROM inletproducts
-//         WHERE InletProduct_id = ?
-//     `;
+    //     const damaged = Number(Damaged_Quantity) || 0;
 
-//     connection.query(
-//         getSql,
-//         [InletProduct_id],
-//         (err, result) => {
-//             if (err) {
-//                 return res.status(500).json({
-//                     success: false,
-//                     message: "Database error",
-//                     error: err
-//                 });
-//             }
+    //     const faulty = Number(Faulty_Quantity) || 0;
 
-//             if (!result.length) {
-//                 return res.status(404).json({
-//                     success: false,
-//                     message: "Inlet Product not found"
-//                 });
-//             }
+    //     if (produced < 0) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message: "Produced quantity cannot be negative"
+    //         });
+    //     }
 
-//             const product = result[0];
-//             const ordered = Number(product.Ordered_Quantity);
-//             const good = produced - damaged - faulty;
-//             const extra = Math.max(good - ordered, 0);
-//             const pendingExtra = Math.max(0, extra - Number(existingProduct.ExtraStock_Posted_Quantity || 0));
+    //     if (damaged < 0 || faulty < 0) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message:
+    //                 "Damaged/Faulty quantity cannot be negative"
+    //         });
+    //     }
 
-//             const sql = `
-//                 UPDATE inletproducts
-//                 SET Produced_Quantity = ?,
-//                     Damaged_Quantity = ?,
-//                     Faulty_Quantity = ?,
-//                     Good_Quantity = ?,
-//                     Extra_Quantity = ?
-//                 WHERE InletProduct_id = ?
-//             `;
+    //     if (damaged + faulty > produced) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message:
+    //                 "Damaged + Faulty cannot be greater than Produced quantity"
+    //         });
+    //     }
 
-//             connection.query(
-//                 sql,
-//                 [
-//                     produced,
-//                     damaged,
-//                     faulty,
-//                     good,
-//                     extra,
-//                     InletProduct_id
-//                 ],
-//                 (err) => {
-//                     if (err) {
-//                         return res.status(500).json({
-//                             success: false,
-//                             message: "Production update failed",
-//                             error: err
-//                         });
-//                     }
-//                     if (extra <= 0) {
-//                         return res.json({
-//                             success: true,
-//                             message: "Production updated successfully",
-//                             Ordered_Quantity: ordered,
-//                             Produced_Quantity: produced,
-//                             Damaged_Quantity: damaged,
-//                             Faulty_Quantity: faulty,
-//                             Good_Quantity: good,
-//                             Extra_Quantity: extra
-//                         });
-//                     }
-//                     addExtraStock(product, pendingExtra, (stockError) => {
+    //     const getSql = `
+    //         SELECT *
+    //         FROM inletproducts
+    //         WHERE InletProduct_id = ?
+    //     `;
 
-//                         if (stockError) {
-//                             return res.status(500).json({
-//                                 success: false,
-//                                 message: "Extra stock update failed"
-//                             });
-//                         }
+    //     connection.query(
+    //         getSql,
+    //         [InletProduct_id],
+    //         (err, result) => {
+    //             if (err) {
+    //                 return res.status(500).json({
+    //                     success: false,
+    //                     message: "Database error",
+    //                     error: err
+    //                 });
+    //             }
 
-//                         const postedSql = `
-//         UPDATE inletproducts
-//         SET ExtraStock_Posted_Quantity = ?
-//         WHERE InletProduct_id = ?
-//     `;
+    //             if (!result.length) {
+    //                 return res.status(404).json({
+    //                     success: false,
+    //                     message: "Inlet Product not found"
+    //                 });
+    //             }
 
-//                         connection.query(
-//                             postedSql,
-//                             [extra, InletProduct_id],
-//                             (postedError) => {
+    //             const product = result[0];
+    //             const ordered = Number(product.Ordered_Quantity);
+    //             const good = produced - damaged - faulty;
+    //             const extra = Math.max(good - ordered, 0);
+    //             const pendingExtra = Math.max(0, extra - Number(existingProduct.ExtraStock_Posted_Quantity || 0));
 
-//                                 if (postedError) {
-//                                     return res.status(500).json({
-//                                         success: false,
-//                                         message: "Stock updated but posting quantity update failed"
-//                                     });
-//                                 }
+    //             const sql = `
+    //                 UPDATE inletproducts
+    //                 SET Produced_Quantity = ?,
+    //                     Damaged_Quantity = ?,
+    //                     Faulty_Quantity = ?,
+    //                     Good_Quantity = ?,
+    //                     Extra_Quantity = ?
+    //                 WHERE InletProduct_id = ?
+    //             `;
 
-//                                 return res.json({
-//                                     success: true,
-//                                     message: "Production and extra stock updated successfully",
-//                                     Ordered_Quantity: ordered,
-//                                     Manufacturing_Required: manufacturingRequired,
-//                                     Produced_Quantity: produced,
-//                                     Good_Quantity: good,
-//                                     Extra_Quantity: extra,
-//                                     Added_To_Stock: pendingExtra
-//                                 });
-//                             }
-//                         );
-//                     });
-//                 });
-//         });
-// });
+    //             connection.query(
+    //                 sql,
+    //                 [
+    //                     produced,
+    //                     damaged,
+    //                     faulty,
+    //                     good,
+    //                     extra,
+    //                     InletProduct_id
+    //                 ],
+    //                 (err) => {
+    //                     if (err) {
+    //                         return res.status(500).json({
+    //                             success: false,
+    //                             message: "Production update failed",
+    //                             error: err
+    //                         });
+    //                     }
+    //                     if (extra <= 0) {
+    //                         return res.json({
+    //                             success: true,
+    //                             message: "Production updated successfully",
+    //                             Ordered_Quantity: ordered,
+    //                             Produced_Quantity: produced,
+    //                             Damaged_Quantity: damaged,
+    //                             Faulty_Quantity: faulty,
+    //                             Good_Quantity: good,
+    //                             Extra_Quantity: extra
+    //                         });
+    //                     }
+    //                     addExtraStock(product, pendingExtra, (stockError) => {
 
-app.get("/GetHSNByProductName", (req, res) => {
-    const Product_Name = String(
-        req.query.Product_Name || ""
-    ).trim();
+    //                         if (stockError) {
+    //                             return res.status(500).json({
+    //                                 success: false,
+    //                                 message: "Extra stock update failed"
+    //                             });
+    //                         }
 
-    if (!Product_Name) {
-        return res.status(400).json({
-            success: false,
-            message: "Product name is required"
-        });
-    }
+    //                         const postedSql = `
+    //         UPDATE inletproducts
+    //         SET ExtraStock_Posted_Quantity = ?
+    //         WHERE InletProduct_id = ?
+    //     `;
 
-    const sql = `
+    //                         connection.query(
+    //                             postedSql,
+    //                             [extra, InletProduct_id],
+    //                             (postedError) => {
+
+    //                                 if (postedError) {
+    //                                     return res.status(500).json({
+    //                                         success: false,
+    //                                         message: "Stock updated but posting quantity update failed"
+    //                                     });
+    //                                 }
+
+    //                                 return res.json({
+    //                                     success: true,
+    //                                     message: "Production and extra stock updated successfully",
+    //                                     Ordered_Quantity: ordered,
+    //                                     Manufacturing_Required: manufacturingRequired,
+    //                                     Produced_Quantity: produced,
+    //                                     Good_Quantity: good,
+    //                                     Extra_Quantity: extra,
+    //                                     Added_To_Stock: pendingExtra
+    //                                 });
+    //                             }
+    //                         );
+    //                     });
+    //                 });
+    //         });
+    // });
+
+    app.get("/GetHSNByProductName", (req, res) => {
+        const Product_Name = String(
+            req.query.Product_Name || ""
+        ).trim();
+
+        if (!Product_Name) {
+            return res.status(400).json({
+                success: false,
+                message: "Product name is required"
+            });
+        }
+
+        const sql = `
         SELECT soi.HSN_Code
         FROM salesorderitems AS soi
         INNER JOIN salesorder AS so
@@ -14465,83 +14574,83 @@ app.get("/GetHSNByProductName", (req, res) => {
         LIMIT 1
     `;
 
-    connection.query(sql, [Product_Name], (err, result) => {
-        if (err) {
-            console.error("HSN fetch error:", err);
+        connection.query(sql, [Product_Name], (err, result) => {
+            if (err) {
+                console.error("HSN fetch error:", err);
 
-            return res.status(500).json({
-                success: false,
-                message: "Error fetching HSN code"
-            });
-        }
+                return res.status(500).json({
+                    success: false,
+                    message: "Error fetching HSN code"
+                });
+            }
 
-        if (result.length === 0) {
+            if (result.length === 0) {
+                return res.status(200).json({
+                    success: true,
+                    found: false,
+                    HSN_Code: ""
+                });
+            }
+
             return res.status(200).json({
                 success: true,
-                found: false,
-                HSN_Code: ""
+                found: true,
+                HSN_Code: result[0].HSN_Code
             });
-        }
-
-        return res.status(200).json({
-            success: true,
-            found: true,
-            HSN_Code: result[0].HSN_Code
         });
     });
-});
 
-app.get('/Allproduct_excess_stock', (req, res) => {
-    const Sqllquery = `SELECT * FROM product_excess_stock ORDER BY ExcessStock_id  DESC`;
-    connection.query(Sqllquery, (err, data) => {
-        if (err) {
-            res.send({
-                success: false,
-                message: err.sqlMessage,
-                data: []
-            });
-        } else {
-            res.send({
-                success: true,
-                message: data.message,
-                data: data
-            });
-        }
-    });
-});
-
-app.post('/ExtraProductByProductName', (req, res) => {
-    const Product_Name = req.body.Product_Name;
-    const Sqllquery = `select * from product_excess_stock where Product_Name = ? `;
-    connection.query(Sqllquery, [Product_Name], (err, data) => {
-        if (err) {
-            res.status(500).send({
-                success: false,
-                message: err.sqlMessage,
-                data: []
-            });
-        } else {
-            res.status(200).send({
-                success: true,
-                message: 'Data by Product Name',
-                data: data
-            });
-        }
-    });
-});
-
-app.get("/GetProductExtraStock", (req, res) => {
-    const Product_Name = String(req.query.Product_Name || "").trim();
-    const HSN_Code = String(req.query.HSN_Code || "").trim();
-
-    if (!Product_Name) {
-        return res.status(400).json({
-            success: false,
-            message: "Product name is required."
+    app.get('/Allproduct_excess_stock', (req, res) => {
+        const Sqllquery = `SELECT * FROM product_excess_stock ORDER BY ExcessStock_id  DESC`;
+        connection.query(Sqllquery, (err, data) => {
+            if (err) {
+                res.send({
+                    success: false,
+                    message: err.sqlMessage,
+                    data: []
+                });
+            } else {
+                res.send({
+                    success: true,
+                    message: data.message,
+                    data: data
+                });
+            }
         });
-    }
+    });
 
-    const sql = `
+    app.post('/ExtraProductByProductName', (req, res) => {
+        const Product_Name = req.body.Product_Name;
+        const Sqllquery = `select * from product_excess_stock where Product_Name = ? `;
+        connection.query(Sqllquery, [Product_Name], (err, data) => {
+            if (err) {
+                res.status(500).send({
+                    success: false,
+                    message: err.sqlMessage,
+                    data: []
+                });
+            } else {
+                res.status(200).send({
+                    success: true,
+                    message: 'Data by Product Name',
+                    data: data
+                });
+            }
+        });
+    });
+
+    app.get("/GetProductExtraStock", (req, res) => {
+        const Product_Name = String(req.query.Product_Name || "").trim();
+        const HSN_Code = String(req.query.HSN_Code || "").trim();
+
+        if (!Product_Name) {
+            return res.status(400).json({
+                success: false,
+                message: "Product name is required."
+            });
+        }
+
+        const sql = `
         SELECT Available_Quantity
         FROM product_excess_stock
         WHERE Product_Name = ?
@@ -14549,74 +14658,74 @@ app.get("/GetProductExtraStock", (req, res) => {
         LIMIT 1
     `;
 
-    connection.query(
-        sql,
-        [Product_Name, HSN_Code],
-        (err, rows) => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    message: "Unable to fetch product stock."
+        connection.query(
+            sql,
+            [Product_Name, HSN_Code],
+            (err, rows) => {
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        message: "Unable to fetch product stock."
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    Available_Quantity: rows.length
+                        ? Number(rows[0].Available_Quantity) || 0
+                        : 0
                 });
             }
+        );
+    });
+    // app.get("/GetProductExtraStock", (req, res) => {
+    //     const Product_Name = String(
+    //         req.query.Product_Name || ""
+    //     ).trim();
 
-            return res.json({
-                success: true,
-                Available_Quantity: rows.length
-                    ? Number(rows[0].Available_Quantity) || 0
-                    : 0
-            });
-        }
-    );
-});
-// app.get("/GetProductExtraStock", (req, res) => {
-//     const Product_Name = String(
-//         req.query.Product_Name || ""
-//     ).trim();
+    //     const HSN_Code = String(
+    //         req.query.HSN_Code || ""
+    //     ).trim();
 
-//     const HSN_Code = String(
-//         req.query.HSN_Code || ""
-//     ).trim();
+    //     if (!Product_Name) {
+    //         return res.status(400).json({
+    //             success: false,
+    //             message: "Product name is required"
+    //         });
+    //     }
 
-//     if (!Product_Name) {
-//         return res.status(400).json({
-//             success: false,
-//             message: "Product name is required"
-//         });
-//     }
+    //     let sql = `
+    //         SELECT Available_Quantity
+    //         FROM product_excess_stock
+    //         WHERE Product_Name = ?
+    //     `;
 
-//     let sql = `
-//         SELECT Available_Quantity
-//         FROM product_excess_stock
-//         WHERE Product_Name = ?
-//     `;
+    //     const params = [Product_Name];
 
-//     const params = [Product_Name];
+    //     if (HSN_Code) {
+    //         sql += ` AND HSN_Code = ?`;
+    //         params.push(HSN_Code);
+    //     }
 
-//     if (HSN_Code) {
-//         sql += ` AND HSN_Code = ?`;
-//         params.push(HSN_Code);
-//     }
+    //     sql += ` LIMIT 1`;
 
-//     sql += ` LIMIT 1`;
+    //     connection.query(sql, params, (err, rows) => {
+    //         if (err) {
+    //             return res.status(500).json({
+    //                 success: false,
+    //                 message: "Failed to fetch extra stock"
+    //             });
+    //         }
 
-//     connection.query(sql, params, (err, rows) => {
-//         if (err) {
-//             return res.status(500).json({
-//                 success: false,
-//                 message: "Failed to fetch extra stock"
-//             });
-//         }
+    //         return res.json({
+    //             success: true,
+    //             Available_Quantity: rows.length
+    //                 ? Number(rows[0].Available_Quantity) || 0
+    //                 : 0
+    //         });
+    //     });
+    // });
 
-//         return res.json({
-//             success: true,
-//             Available_Quantity: rows.length
-//                 ? Number(rows[0].Available_Quantity) || 0
-//                 : 0
-//         });
-//     });
-// });
-
-app.listen(3000, () => {
-    console.log('Server is Running On Port 3000');
-});
+    app.listen(3000, () => {
+        console.log('Server is Running On Port 3000');
+    });
