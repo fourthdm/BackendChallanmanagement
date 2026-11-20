@@ -5169,6 +5169,9 @@ app.get('/ChallanbyChallanid/:Challan_id', (req, res) => {
                 Extra_Quantity: row.Extra_Quantity,
                 Rate: row.Rate,
                 SubTotal: row.SubTotal,
+                Available_Extra_Stock: row.Available_Extra_Stock,
+                Stock_Used: row.Stock_Used,
+                Manufacturing_Required: row.Manufacturing_Required,
             });
 
         });
@@ -5796,7 +5799,6 @@ app.get('/PrintInletchallan/:Challan_id', (req, res) => {
             doc.text(
                 "Phone: 9999999999 Email: manufacture@gmail.com", 170, 75
             );
-
             doc.text(
                 "GSTIN: 27AQPBO184J1Z5 PAN: AAICP0247K", 160, 95
             );
@@ -6016,15 +6018,10 @@ app.get('/PrintInletchallan/:Challan_id', (req, res) => {
 
 //                 NewCode = `VC_${datePart}_${String(last + 1).padStart(2, "0")}`;
 //             }
-
 //             let SubTotal = 0;
-
 //             vendoritems.forEach(item => {
-
 //                 SubTotal += Number(item.Rate) * Number(item.Product_Quantity);
-
 //             });
-
 //             const Total_Amount = SubTotal;
 //             const CGST_amount = Total_Amount * 0.09;
 //             const SGST_amount = Total_Amount * 0.09;
