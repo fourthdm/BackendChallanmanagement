@@ -11576,8 +11576,6 @@ app.post('/DeletesalesorderbyDelationReason/:SalesOrder_id', (req, res) => {
                                             // -----------------------------------
                                             // 11. Delete Operations
                                             // -----------------------------------
-
-
                                             connection.query(
                                                 `
                                                         DELETE FROM salesorderitems
@@ -12870,12 +12868,15 @@ app.get('/InletChallanbySalesorderNumber/:Sales_Order_Number', (req, res) => {
                         ExtraStock_Posted_Quantity: row.ExtraStock_Posted_Quantity,
                         Rate: row.Rate,
                         SubTotal: row.SubTotal,
+                        Available_Extra_Stock: row.Available_Extra_Stock,
+                        Stock_Used: row.Stock_Used,
+                        Manufacturing_Required: row.Manufacturing_Required
                     });
                 }
             });
-            // ------------------------------------------------
+            // -------------------------
             // 5. Convert object to array
-            // ------------------------------------------------
+            // -------------------------
             const finalData = Object.values(result).sort(
                 (a, b) => new Date(b.Added_Date) - new Date(a.Added_Date)
             );
